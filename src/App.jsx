@@ -90,7 +90,7 @@ const WellnessHubPro = () => {
           .from('teams')
           .insert([
             {
-              license: license,
+              license: license.trim().toUpperCase(),
               team_name: teamData.teamName,
               coach_name: teamData.coachName,
               coach_email: teamData.email,
