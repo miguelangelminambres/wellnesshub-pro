@@ -111,7 +111,7 @@ const WellnessHubPro = () => {
               </label>
               <input
                 type="text"
-                placeholder="Ej: WELLNESS-202511-S0EF-3XSN-65"
+                placeholder=WELLNESS-XXXXXX-XXXX-XXXX-XX
                 value={license}
                 onChange={(e) => setLicense(e.target.value.toUpperCase())}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4"
