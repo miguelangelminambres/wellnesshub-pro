@@ -25,11 +25,40 @@ const WellnessHubPro = () => {
       password: ''
     });
 
-    const validateLicense = async () => {
-      if (!license.startsWith('WELLNESS-')) {
-        alert('Licencia inválida. Usa el formato: WELLNESS-XXXX-XXXX-XXXX');
-        return;
-      }
+  const validateLicense = async () => {
+  // Limpiar espacios y convertir a mayúsculas
+  const cleanLicense = license.trim().toUpperCase();
+  
+  // Validar formato básico
+  if (!cleanLicense.startsWith('WELLNESS-')) {
+    alert('Licencia inválida. Debe empezar con WELLNESS-');
+    return;
+  }
+  
+  // Validar longitud mínima
+  if (cleanLicense.length < 20) {
+    alert('Licencia inválida. Formato incorrecto.');
+    return;
+  }
+  
+  setLicense(cleanLicense);
+  setLoading(true);
+  
+  const { data } = await supabase
+    .from('teams')
+    .select('license')
+    .eq('license', cleanLicense)
+    .single();
+
+  setLoading(false);
+
+  if (data) {
+    alert('Esta licencia ya está en uso. Por favor contacta a soporte.');
+    return;
+  }
+
+  setShowRegister(true);
+};
 
       setLoading(true);
       const { data } = await supabase
