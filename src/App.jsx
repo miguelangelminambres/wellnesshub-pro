@@ -427,51 +427,40 @@ const LicenseScreen = () => {
     );
   };
 
-  const CoachDashboard = () => {
-    return (
-      <div className="min-h-screen bg-gray-50 p-8">
-        <div className="max-w-4xl mx-auto">
-          <div className="bg-white rounded-xl shadow p-6">
-            <h1 className="text-2xl font-bold mb-4">Dashboard del Entrenador</h1>
-            <p className="text-gray-600 mb-2">Bienvenido, <span className="font-bold">{currentUser?.coach_name}</span></p>
-            <p className="text-gray-600 mb-4">Equipo: <span className="font-bold">{currentUser?.team_name}</span></p>
-            <p className="text-sm text-gray-500 mb-4">Licencia: <code className="bg-gray-100 px-2 py-1 rounded font-mono">{currentUser?.license}</code></p>
-            <button
-              onClick={() => {
-                setCurrentUser(null);
-                setView('login');
-              }}
-              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
-            >
-              Cerrar Sesión
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
+ const CoachDashboard = () => {
+  // Estados
+  const [activeTab, setActiveTab] = useState('overview');
+  const [players, setPlayers] = useState([]);
+  // ... resto del código
 
-  const PlayerForm = () => {
-    return (
-      <div className="min-h-screen bg-gray-50 p-8">
-        <div className="max-w-4xl mx-auto">
-          <div className="bg-white rounded-xl shadow p-6">
-            <h1 className="text-2xl font-bold mb-4">Formulario del Jugador</h1>
-            <p className="text-gray-600 mb-4">Bienvenido, <span className="font-bold">{currentUser?.name}</span></p>
-            <button
-              onClick={() => {
-                setCurrentUser(null);
-                setView('login');
-              }}
-              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
-            >
-              Cerrar Sesión
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
+  // Funciones
+  const loadPlayers = async () => { ... }
+  const addPlayer = async () => { ... }
+  const deletePlayer = async () => { ... }
+
+  // Render
+  return (
+    <div>
+      {/* Pestañas: Resumen, Jugadores, Configuración */}
+    </div>
+  );
+};
+const PlayerForm = () => {
+  // Estados
+  const [wellnessData, setWellnessData] = useState({ ... });
+  const [history, setHistory] = useState([]);
+
+  // Funciones
+  const loadHistory = async () => { ... }
+  const submitWellness = async () => { ... }
+
+  // Render
+  return (
+    <div>
+      {/* Formulario de bienestar + Historial */}
+    </div>
+  );
+};
 
   return (
     <div>
