@@ -13,12 +13,17 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState(null);
 
- const LicenseScreen = () => {
+// ============================================
+// VERSIÓN ULTRA SIMPLIFICADA Y DEBUGGEADA
+// Esta versión tiene console.logs en cada paso
+// para que podamos ver exactamente qué pasa
+// ============================================
+
+const LicenseScreen = () => {
   const [license, setLicense] = useState('');
-  const [showRegister, setShowRegister] = useState(false);
-  const [validLicenseData, setValidLicenseData] = useState(null);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
+  const [step, setStep] = useState('input'); // 'input', 'loading', 'register', 'error'
+  const [licenseData, setLicenseData] = useState(null);
+  const [errorMsg, setErrorMsg] = useState('');
   const [teamData, setTeamData] = useState({
     teamName: '',
     coachName: '',
@@ -26,86 +31,86 @@ function App() {
     password: ''
   });
 
+  console.log('🔍 Estado actual:', { step, license, licenseData });
+
   const validateLicense = async () => {
+    console.log('1️⃣ Iniciando validación...');
     const cleanLicense = license.trim().toUpperCase();
     
-    // Limpiar mensajes anteriores
-    setErrorMessage('');
-    setSuccessMessage('');
-    
     if (!cleanLicense || cleanLicense.length < 10) {
-      setErrorMessage('Por favor introduce una licencia válida');
+      console.log('❌ Licencia muy corta');
+      setErrorMsg('Por favor introduce una licencia válida');
       return;
     }
     
     if (!cleanLicense.includes('WELLNESS')) {
-      setErrorMessage('Licencia inválida. Debe contener WELLNESS');
+      console.log('❌ No contiene WELLNESS');
+      setErrorMsg('Licencia inválida. Debe contener WELLNESS');
       return;
     }
     
-    setLoading(true);
+    console.log('2️⃣ Cambiando a estado loading...');
+    setStep('loading');
+    setErrorMsg('');
     
     try {
-      // 1. Verificar si la licencia existe en la tabla licenses
-      const { data: licenseData, error: licenseError } = await supabase
+      console.log('3️⃣ Buscando en Supabase...');
+      const { data, error } = await supabase
         .from('licenses')
         .select('*')
         .eq('license_key', cleanLicense)
         .maybeSingle();
 
-      console.log('Búsqueda de licencia:', { licenseData, licenseError });
+      console.log('4️⃣ Respuesta de Supabase:', { data, error });
 
-      // Si no existe la licencia
-      if (!licenseData) {
-        setLoading(false);
-        setErrorMessage('❌ Licencia no válida. Esta licencia no existe en el sistema.');
+      if (!data) {
+        console.log('❌ Licencia no encontrada');
+        setStep('input');
+        setErrorMsg('❌ Licencia no válida. Esta licencia no existe en el sistema.');
         return;
       }
 
-      // Si la licencia ya fue usada
-      if (licenseData.status === 'used') {
-        setLoading(false);
-        setErrorMessage('❌ Esta licencia ya ha sido activada anteriormente.');
+      if (data.status === 'used') {
+        console.log('❌ Licencia ya usada');
+        setStep('input');
+        setErrorMsg('❌ Esta licencia ya ha sido activada anteriormente.');
         return;
       }
 
-      // ✅ Licencia válida y disponible
-      setValidLicenseData(licenseData);
-      setLoading(false);
-      setSuccessMessage('✅ ¡Licencia válida! Completa tu registro.');
+      console.log('✅ Licencia válida! Guardando datos...');
+      setLicenseData(data);
       
-      // Mostrar formulario después de un pequeño delay para que se vea el mensaje
-      setTimeout(() => {
-        setShowRegister(true);
-      }, 500);
+      console.log('5️⃣ Cambiando a estado register...');
+      setStep('register');
+      console.log('✅ Debería mostrarse el formulario ahora!');
       
     } catch (err) {
-      console.error('Error:', err);
-      setLoading(false);
-      setErrorMessage('Error al validar la licencia: ' + err.message);
+      console.error('💥 Error:', err);
+      setStep('input');
+      setErrorMsg('Error al validar la licencia: ' + err.message);
     }
   };
 
   const createTeam = async () => {
-    setErrorMessage('');
-    setSuccessMessage('');
+    console.log('📝 Creando equipo...');
     
     if (!teamData.teamName || !teamData.coachName || !teamData.email || !teamData.password) {
-      setErrorMessage('Por favor completa todos los campos');
+      setErrorMsg('Por favor completa todos los campos');
       return;
     }
 
-    if (!validLicenseData) {
-      setErrorMessage('Error: No hay datos de licencia válidos');
+    if (!licenseData) {
+      setErrorMsg('Error: No hay datos de licencia válidos');
       return;
     }
 
-    setLoading(true);
+    setStep('loading');
+    setErrorMsg('');
 
     try {
       const cleanLicense = license.trim().toUpperCase();
       
-      // 1. Crear el equipo
+      console.log('1️⃣ Creando registro en teams...');
       const { data: newTeam, error: teamError } = await supabase
         .from('teams')
         .insert([
@@ -121,19 +126,19 @@ function App() {
         .single();
 
       if (teamError) {
-        console.error('Error al crear equipo:', teamError);
+        console.error('❌ Error al crear equipo:', teamError);
+        setStep('register');
         if (teamError.code === '23505') {
-          setErrorMessage('Este email ya está registrado');
+          setErrorMsg('Este email ya está registrado');
         } else {
-          setErrorMessage('Error: ' + teamError.message);
+          setErrorMsg('Error: ' + teamError.message);
         }
-        setLoading(false);
         return;
       }
 
-      console.log('Equipo creado:', newTeam);
+      console.log('✅ Equipo creado:', newTeam);
 
-      // 2. Marcar la licencia como usada
+      console.log('2️⃣ Marcando licencia como usada...');
       const { error: updateError } = await supabase
         .from('licenses')
         .update({ 
@@ -142,49 +147,59 @@ function App() {
           user_email: teamData.email,
           team_id: newTeam.id
         })
-        .eq('id', validLicenseData.id);
+        .eq('id', licenseData.id);
 
       if (updateError) {
-        console.error('Error al actualizar licencia:', updateError);
+        console.error('⚠️ Error al actualizar licencia:', updateError);
+      } else {
+        console.log('✅ Licencia marcada como usada');
       }
 
-      setSuccessMessage('🎉 ¡Licencia activada! Tu cuenta ha sido creada exitosamente.');
+      console.log('🎉 TODO COMPLETADO! Redirigiendo...');
       
-      // Esperar 2 segundos para mostrar el mensaje de éxito y luego redirigir
+      // Mostrar mensaje de éxito por 2 segundos
+      setErrorMsg(''); // Limpiar error
       setTimeout(() => {
         setView('login');
-      }, 2000);
+      }, 1500);
       
     } catch (err) {
-      console.error('Error:', err);
-      setErrorMessage('Error al crear la cuenta: ' + err.message);
-    } finally {
-      setLoading(false);
+      console.error('💥 Error:', err);
+      setStep('register');
+      setErrorMsg('Error al crear la cuenta: ' + err.message);
     }
   };
+
+  // ============================================
+  // RENDERIZADO SEGÚN EL STEP
+  // ============================================
+
+  console.log('🎨 Renderizando step:', step);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-600 to-green-600 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
+        
+        {/* Header */}
         <div className="text-center mb-6">
           <h1 className="text-3xl font-bold text-gray-800 mb-2">⚽ WellnessHub Pro</h1>
           <p className="text-gray-600">Sistema Profesional de Control de Bienestar</p>
         </div>
 
-        {/* Mensajes de Error/Éxito */}
-        {errorMessage && (
+        {/* Debug Info (quitar en producción) */}
+        <div className="mb-4 p-2 bg-gray-100 rounded text-xs">
+          <strong>Debug:</strong> step = {step}
+        </div>
+
+        {/* Mensajes de Error */}
+        {errorMsg && (
           <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-sm text-red-800">{errorMessage}</p>
-          </div>
-        )}
-        
-        {successMessage && (
-          <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg animate-pulse">
-            <p className="text-sm text-green-800 font-semibold">{successMessage}</p>
+            <p className="text-sm text-red-800">{errorMsg}</p>
           </div>
         )}
 
-        {!showRegister ? (
+        {/* PANTALLA 1: INPUT DE LICENCIA */}
+        {step === 'input' && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Introduce tu clave de licencia
@@ -195,31 +210,24 @@ function App() {
               value={license}
               onChange={(e) => {
                 setLicense(e.target.value.toUpperCase());
-                setErrorMessage(''); // Limpiar error al escribir
+                setErrorMsg('');
               }}
               onKeyPress={(e) => {
-                if (e.key === 'Enter' && !loading && license) {
+                if (e.key === 'Enter' && license) {
                   validateLicense();
                 }
               }}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4 font-mono text-sm"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 mb-4 font-mono text-sm"
             />
             <button
-              onClick={validateLicense}
-              disabled={loading || !license}
-              className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition disabled:bg-gray-400 disabled:cursor-not-allowed"
+              onClick={() => {
+                console.log('🖱️ Click en validar');
+                validateLicense();
+              }}
+              disabled={!license}
+              className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition disabled:bg-gray-400"
             >
-              {loading ? (
-                <span className="flex items-center justify-center">
-                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Validando...
-                </span>
-              ) : (
-                'Validar Licencia'
-              )}
+              Validar Licencia
             </button>
             <button
               onClick={() => setView('login')}
@@ -233,7 +241,21 @@ function App() {
               <code className="text-xs">WELLNESS-YYYYMM-XXXX-XXXX-CC</code>
             </div>
           </div>
-        ) : (
+        )}
+
+        {/* PANTALLA 2: LOADING */}
+        {step === 'loading' && (
+          <div className="text-center py-8">
+            <svg className="animate-spin h-12 w-12 text-blue-600 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p className="text-gray-600">Procesando...</p>
+          </div>
+        )}
+
+        {/* PANTALLA 3: FORMULARIO DE REGISTRO */}
+        {step === 'register' && (
           <div>
             <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
               <p className="text-sm text-green-800">
@@ -266,7 +288,7 @@ function App() {
             />
             <input
               type="password"
-              placeholder="Contraseña (mínimo 6 caracteres)"
+              placeholder="Contraseña"
               value={teamData.password}
               onChange={(e) => setTeamData({ ...teamData, password: e.target.value })}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg mb-4 focus:ring-2 focus:ring-green-500"
@@ -274,27 +296,17 @@ function App() {
             
             <button
               onClick={createTeam}
-              disabled={loading}
-              className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition disabled:bg-gray-400 disabled:cursor-not-allowed"
+              className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition"
             >
-              {loading ? (
-                <span className="flex items-center justify-center">
-                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Creando cuenta...
-                </span>
-              ) : (
-                '🚀 Activar Licencia y Crear Cuenta'
-              )}
+              🚀 Activar Licencia y Crear Cuenta
             </button>
             
             <button
               onClick={() => {
-                setShowRegister(false);
-                setValidLicenseData(null);
-                setSuccessMessage('');
+                console.log('⬅️ Volver a input');
+                setStep('input');
+                setLicenseData(null);
+                setErrorMsg('');
               }}
               className="w-full mt-2 text-gray-600 hover:text-gray-800 font-medium text-sm"
             >
@@ -302,10 +314,23 @@ function App() {
             </button>
           </div>
         )}
+
+        {/* PANTALLA 4: SUCCESS (opcional) */}
+        {step === 'success' && (
+          <div className="text-center py-8">
+            <div className="text-6xl mb-4">🎉</div>
+            <h2 className="text-2xl font-bold text-gray-800 mb-2">¡Cuenta Creada!</h2>
+            <p className="text-gray-600 mb-4">Tu licencia ha sido activada exitosamente.</p>
+            <p className="text-sm text-gray-500">Redirigiendo al login...</p>
+          </div>
+        )}
+
       </div>
     </div>
   );
 };
+
+export default LicenseScreen;
   const LoginScreen = () => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
