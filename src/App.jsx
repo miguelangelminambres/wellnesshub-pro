@@ -16,6 +16,7 @@ function App() {
   const LicenseScreen = () => {
     const [license, setLicense] = useState('');
     const [showRegister, setShowRegister] = useState(false);
+    const [validLicenseData, setValidLicenseData] = useState(null);
     const [teamData, setTeamData] = useState({
       teamName: '',
       coachName: '',
@@ -27,8 +28,6 @@ function App() {
       const cleanLicense = license.trim().toUpperCase();
       
       console.log('Licencia a validar:', cleanLicense);
-      console.log('Empieza con WELLNESS-?', cleanLicense.startsWith('WELLNESS-'));
-      console.log('Longitud:', cleanLicense.length);
       
       if (!cleanLicense || cleanLicense.length < 10) {
         alert('Por favor introduce una licencia válida');
@@ -43,24 +42,50 @@ function App() {
       setLoading(true);
       
       try {
-        const { data, error } = await supabase
-          .from('teams')
-          .select('license')
-          .eq('license', cleanLicense)
+        // 1. Verificar si la licencia existe en la tabla licenses
+        const { data: licenseData, error: licenseError } = await supabase
+          .from('licenses')
+          .select('*')
+          .eq('license_key', cleanLicense)
           .maybeSingle();
 
-        console.log('Respuesta de Supabase:', { data, error });
+        console.log('Búsqueda de licencia:', { licenseData, licenseError });
 
-        if (data) {
-          alert('Esta licencia ya está en uso');
+        // Si no existe la licencia
+        if (!licenseData) {
+          alert('❌ Licencia no válida. Esta licencia no existe en el sistema.');
           setLoading(false);
           return;
         }
 
+        // Si la licencia ya fue usada
+        if (licenseData.status === 'used') {
+          alert('❌ Esta licencia ya ha sido activada anteriormente.');
+          setLoading(false);
+          return;
+        }
+
+        // 2. Verificar que el email no esté ya registrado
+        const { data: existingTeam, error: teamError } = await supabase
+          .from('teams')
+          .select('coach_email')
+          .eq('coach_email', teamData.email)
+          .maybeSingle();
+
+        if (existingTeam) {
+          alert('⚠️ Este email ya está registrado en el sistema.');
+          setLoading(false);
+          return;
+        }
+
+        // ✅ Licencia válida y disponible
+        setValidLicenseData(licenseData);
         setShowRegister(true);
+        alert('✅ ¡Licencia válida! Completa tu registro.');
+        
       } catch (err) {
         console.error('Error:', err);
-        alert('Error al validar la licencia');
+        alert('Error al validar la licencia: ' + err.message);
       } finally {
         setLoading(false);
       }
@@ -72,12 +97,18 @@ function App() {
         return;
       }
 
+      if (!validLicenseData) {
+        alert('Error: No hay datos de licencia válidos');
+        return;
+      }
+
       setLoading(true);
 
       try {
         const cleanLicense = license.trim().toUpperCase();
         
-        const { data, error } = await supabase
+        // 1. Crear el equipo
+        const { data: newTeam, error: teamError } = await supabase
           .from('teams')
           .insert([
             {
@@ -91,23 +122,41 @@ function App() {
           .select()
           .single();
 
-        console.log('Crear equipo:', { data, error });
-
-        if (error) {
-          if (error.code === '23505') {
+        if (teamError) {
+          console.error('Error al crear equipo:', teamError);
+          if (teamError.code === '23505') {
             alert('Este email ya está registrado');
           } else {
-            alert('Error: ' + error.message);
+            alert('Error: ' + teamError.message);
           }
           setLoading(false);
           return;
         }
 
-        alert('¡Licencia activada! Tu cuenta ha sido creada.');
+        console.log('Equipo creado:', newTeam);
+
+        // 2. Marcar la licencia como usada
+        const { error: updateError } = await supabase
+          .from('licenses')
+          .update({ 
+            status: 'used',
+            used_at: new Date().toISOString(),
+            user_email: teamData.email,
+            team_id: newTeam.id
+          })
+          .eq('id', validLicenseData.id);
+
+        if (updateError) {
+          console.error('Error al actualizar licencia:', updateError);
+          // No bloqueamos el proceso si falla esto
+        }
+
+        alert('🎉 ¡Licencia activada! Tu cuenta ha sido creada exitosamente.');
         setView('login');
+        
       } catch (err) {
         console.error('Error:', err);
-        alert('Error al crear la cuenta');
+        alert('Error al crear la cuenta: ' + err.message);
       } finally {
         setLoading(false);
       }
@@ -128,14 +177,14 @@ function App() {
               </label>
               <input
                 type="text"
-                placeholder="WELLNESS-..."
+                placeholder="WELLNESS-202511-XXXX-XXXX-XX"
                 value={license}
-                onChange={(e) => setLicense(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4"
+                onChange={(e) => setLicense(e.target.value.toUpperCase())}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4 font-mono"
               />
               <button
                 onClick={validateLicense}
-                disabled={loading}
+                disabled={loading || !license}
                 className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition disabled:bg-gray-400"
               >
                 {loading ? 'Validando...' : 'Validar Licencia'}
@@ -146,44 +195,64 @@ function App() {
               >
                 Ya tengo una cuenta
               </button>
+              
+              <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
+                <p className="font-semibold mb-1">ℹ️ Formato de licencia:</p>
+                <code className="text-xs">WELLNESS-YYYYMM-XXXX-XXXX-CC</code>
+              </div>
             </div>
           ) : (
             <div>
+              <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                <p className="text-sm text-green-800">
+                  ✅ Licencia válida: <code className="font-mono font-bold">{license}</code>
+                </p>
+              </div>
+              
               <h2 className="text-xl font-bold text-gray-800 mb-4">Crea tu Cuenta</h2>
               <input
                 type="text"
                 placeholder="Nombre del Equipo"
                 value={teamData.teamName}
                 onChange={(e) => setTeamData({ ...teamData, teamName: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg mb-3"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg mb-3 focus:ring-2 focus:ring-green-500"
               />
               <input
                 type="text"
                 placeholder="Tu Nombre Completo"
                 value={teamData.coachName}
                 onChange={(e) => setTeamData({ ...teamData, coachName: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg mb-3"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg mb-3 focus:ring-2 focus:ring-green-500"
               />
               <input
                 type="email"
                 placeholder="Email"
                 value={teamData.email}
                 onChange={(e) => setTeamData({ ...teamData, email: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg mb-3"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg mb-3 focus:ring-2 focus:ring-green-500"
               />
               <input
                 type="password"
                 placeholder="Contraseña"
                 value={teamData.password}
                 onChange={(e) => setTeamData({ ...teamData, password: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg mb-4"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg mb-4 focus:ring-2 focus:ring-green-500"
               />
               <button
                 onClick={createTeam}
                 disabled={loading}
                 className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition disabled:bg-gray-400"
               >
-                {loading ? 'Creando...' : 'Crear Cuenta'}
+                {loading ? 'Creando cuenta...' : '🚀 Activar Licencia y Crear Cuenta'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowRegister(false);
+                  setValidLicenseData(null);
+                }}
+                className="w-full mt-2 text-gray-600 hover:text-gray-800 font-medium"
+              >
+                ← Volver
               </button>
             </div>
           )}
@@ -197,9 +266,15 @@ function App() {
     const [password, setPassword] = useState('');
 
     const handleLogin = async () => {
+      if (!email || !password) {
+        alert('Por favor completa todos los campos');
+        return;
+      }
+
       setLoading(true);
 
       try {
+        // Buscar en la tabla de coaches/teams
         const { data: coach } = await supabase
           .from('teams')
           .select('*')
@@ -214,6 +289,7 @@ function App() {
           return;
         }
 
+        // Buscar en la tabla de jugadores
         const { data: players } = await supabase
           .from('players')
           .select('*')
@@ -233,10 +309,10 @@ function App() {
           return;
         }
 
-        alert('Email o contraseña incorrectos');
+        alert('❌ Email o contraseña incorrectos');
       } catch (err) {
         console.error('Error login:', err);
-        alert('Error al iniciar sesión');
+        alert('Error al iniciar sesión: ' + err.message);
       } finally {
         setLoading(false);
       }
@@ -254,14 +330,15 @@ function App() {
             placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg mb-3"
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg mb-3 focus:ring-2 focus:ring-blue-500"
           />
           <input
             type="password"
             placeholder="Contraseña"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg mb-4"
+            onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg mb-4 focus:ring-2 focus:ring-blue-500"
           />
           <button
             onClick={handleLogin}
@@ -287,8 +364,9 @@ function App() {
         <div className="max-w-4xl mx-auto">
           <div className="bg-white rounded-xl shadow p-6">
             <h1 className="text-2xl font-bold mb-4">Dashboard del Entrenador</h1>
-            <p className="text-gray-600 mb-4">Bienvenido, {currentUser?.coach_name}</p>
-            <p className="text-gray-600 mb-4">Equipo: {currentUser?.team_name}</p>
+            <p className="text-gray-600 mb-2">Bienvenido, <span className="font-bold">{currentUser?.coach_name}</span></p>
+            <p className="text-gray-600 mb-4">Equipo: <span className="font-bold">{currentUser?.team_name}</span></p>
+            <p className="text-sm text-gray-500 mb-4">Licencia: <code className="bg-gray-100 px-2 py-1 rounded font-mono">{currentUser?.license}</code></p>
             <button
               onClick={() => {
                 setCurrentUser(null);
@@ -310,7 +388,7 @@ function App() {
         <div className="max-w-4xl mx-auto">
           <div className="bg-white rounded-xl shadow p-6">
             <h1 className="text-2xl font-bold mb-4">Formulario del Jugador</h1>
-            <p className="text-gray-600 mb-4">Bienvenido, {currentUser?.name}</p>
+            <p className="text-gray-600 mb-4">Bienvenido, <span className="font-bold">{currentUser?.name}</span></p>
             <button
               onClick={() => {
                 setCurrentUser(null);
