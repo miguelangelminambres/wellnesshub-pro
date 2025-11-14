@@ -2,13 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { createClient } from '@supabase/supabase-js';
 
-// CONFIGURACIÓN DE SUPABASE
 const supabase = createClient(
   'https://zyducbruxaqpuupioaoe.supabase.co',
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp5ZHVjYnJ1eGFxcHV1cGlvYW9lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwNjUyNzEsImV4cCI6MjA3ODY0MTI3MX0.8Dd0ZFogpaPYXft5sdbS5SBaPaNr26qr5Z8-hr1X_9M'
 );
 
-const WellnessHubPro = () => {
+function App() {
   const [view, setView] = useState('license');
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -27,32 +26,44 @@ const WellnessHubPro = () => {
     const validateLicense = async () => {
       const cleanLicense = license.trim().toUpperCase();
       
-      if (!cleanLicense.startsWith('WELLNESS-')) {
-        alert('Licencia inválida. Debe empezar con WELLNESS-');
+      console.log('Licencia a validar:', cleanLicense);
+      console.log('Empieza con WELLNESS-?', cleanLicense.startsWith('WELLNESS-'));
+      console.log('Longitud:', cleanLicense.length);
+      
+      if (!cleanLicense || cleanLicense.length < 10) {
+        alert('Por favor introduce una licencia válida');
         return;
       }
       
-      if (cleanLicense.length < 20) {
-        alert('Licencia inválida. Formato incorrecto.');
+      if (!cleanLicense.includes('WELLNESS')) {
+        alert('Licencia inválida. Debe contener WELLNESS');
         return;
       }
       
       setLoading(true);
       
-      const { data } = await supabase
-        .from('teams')
-        .select('license')
-        .eq('license', cleanLicense)
-        .single();
+      try {
+        const { data, error } = await supabase
+          .from('teams')
+          .select('license')
+          .eq('license', cleanLicense)
+          .maybeSingle();
 
-      setLoading(false);
+        console.log('Respuesta de Supabase:', { data, error });
 
-      if (data) {
-        alert('Esta licencia ya está en uso. Por favor contacta a soporte.');
-        return;
+        if (data) {
+          alert('Esta licencia ya está en uso');
+          setLoading(false);
+          return;
+        }
+
+        setShowRegister(true);
+      } catch (err) {
+        console.error('Error:', err);
+        alert('Error al validar la licencia');
+      } finally {
+        setLoading(false);
       }
-
-      setShowRegister(true);
     };
 
     const createTeam = async () => {
@@ -64,11 +75,13 @@ const WellnessHubPro = () => {
       setLoading(true);
 
       try {
+        const cleanLicense = license.trim().toUpperCase();
+        
         const { data, error } = await supabase
           .from('teams')
           .insert([
             {
-              license: license.trim().toUpperCase(),
+              license: cleanLicense,
               team_name: teamData.teamName,
               coach_name: teamData.coachName,
               coach_email: teamData.email,
@@ -78,19 +91,23 @@ const WellnessHubPro = () => {
           .select()
           .single();
 
+        console.log('Crear equipo:', { data, error });
+
         if (error) {
           if (error.code === '23505') {
             alert('Este email ya está registrado');
           } else {
-            alert('Error al crear la cuenta: ' + error.message);
+            alert('Error: ' + error.message);
           }
+          setLoading(false);
           return;
         }
 
         alert('¡Licencia activada! Tu cuenta ha sido creada.');
         setView('login');
       } catch (err) {
-        alert('Error: ' + err.message);
+        console.error('Error:', err);
+        alert('Error al crear la cuenta');
       } finally {
         setLoading(false);
       }
@@ -111,9 +128,9 @@ const WellnessHubPro = () => {
               </label>
               <input
                 type="text"
-                placeholder="WELLNESS-XXXXXX-XXXX-XXXX-XX"
+                placeholder="WELLNESS-..."
                 value={license}
-                onChange={(e) => setLicense(e.target.value.toUpperCase())}
+                onChange={(e) => setLicense(e.target.value)}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4"
               />
               <button
@@ -188,7 +205,7 @@ const WellnessHubPro = () => {
           .select('*')
           .eq('coach_email', email)
           .eq('coach_password', password)
-          .single();
+          .maybeSingle();
 
         if (coach) {
           setCurrentUser({ role: 'coach', teamId: coach.id, ...coach });
@@ -218,6 +235,7 @@ const WellnessHubPro = () => {
 
         alert('Email o contraseña incorrectos');
       } catch (err) {
+        console.error('Error login:', err);
         alert('Error al iniciar sesión');
       } finally {
         setLoading(false);
@@ -264,19 +282,48 @@ const WellnessHubPro = () => {
   };
 
   const CoachDashboard = () => {
-    return <div className="p-8 text-center">Dashboard (En construcción - Funciona OK)</div>;
-  };
-
-  const PlayersManagement = () => {
-    return <div className="p-8 text-center">Gestión Jugadores (En construcción)</div>;
-  };
-
-  const HistoryView = () => {
-    return <div className="p-8 text-center">Historial (En construcción)</div>;
+    return (
+      <div className="min-h-screen bg-gray-50 p-8">
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-white rounded-xl shadow p-6">
+            <h1 className="text-2xl font-bold mb-4">Dashboard del Entrenador</h1>
+            <p className="text-gray-600 mb-4">Bienvenido, {currentUser?.coach_name}</p>
+            <p className="text-gray-600 mb-4">Equipo: {currentUser?.team_name}</p>
+            <button
+              onClick={() => {
+                setCurrentUser(null);
+                setView('login');
+              }}
+              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
+            >
+              Cerrar Sesión
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   const PlayerForm = () => {
-    return <div className="p-8 text-center">Formulario Jugador (En construcción)</div>;
+    return (
+      <div className="min-h-screen bg-gray-50 p-8">
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-white rounded-xl shadow p-6">
+            <h1 className="text-2xl font-bold mb-4">Formulario del Jugador</h1>
+            <p className="text-gray-600 mb-4">Bienvenido, {currentUser?.name}</p>
+            <button
+              onClick={() => {
+                setCurrentUser(null);
+                setView('login');
+              }}
+              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
+            >
+              Cerrar Sesión
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -284,11 +331,9 @@ const WellnessHubPro = () => {
       {view === 'license' && <LicenseScreen />}
       {view === 'login' && <LoginScreen />}
       {view === 'coach-dashboard' && <CoachDashboard />}
-      {view === 'players' && <PlayersManagement />}
-      {view === 'history' && <HistoryView />}
       {view === 'player-form' && <PlayerForm />}
     </div>
   );
-};
+}
 
-export default WellnessHubPro;
+export default App;
