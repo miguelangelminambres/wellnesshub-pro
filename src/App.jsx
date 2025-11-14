@@ -373,7 +373,9 @@ function App() {
   const CoachDashboard = () => {
     const [activeTab, setActiveTab] = useState('overview');
     const [players, setPlayers] = useState([]);
+    const [wellnessLogs, setWellnessLogs] = useState([]);
     const [showAddPlayer, setShowAddPlayer] = useState(false);
+    const [selectedPlayer, setSelectedPlayer] = useState(null);
     const [newPlayer, setNewPlayer] = useState({
       name: '',
       email: '',
@@ -382,10 +384,12 @@ function App() {
       number: ''
     });
     const [loadingPlayers, setLoadingPlayers] = useState(false);
+    const [loadingWellness, setLoadingWellness] = useState(false);
 
     useEffect(() => {
       if (currentUser?.id) {
         loadPlayers();
+        loadWellnessLogs();
       }
     }, [currentUser]);
 
@@ -405,6 +409,32 @@ function App() {
         alert('Error al cargar los jugadores');
       } finally {
         setLoadingPlayers(false);
+      }
+    };
+
+    const loadWellnessLogs = async () => {
+      setLoadingWellness(true);
+      try {
+        const { data, error } = await supabase
+          .from('wellness_logs')
+          .select(`
+            *,
+            players (
+              name,
+              number,
+              position
+            )
+          `)
+          .eq('team_id', currentUser.id)
+          .order('created_at', { ascending: false })
+          .limit(50);
+
+        if (error) throw error;
+        setWellnessLogs(data || []);
+      } catch (err) {
+        console.error('Error al cargar registros de bienestar:', err);
+      } finally {
+        setLoadingWellness(false);
       }
     };
 
@@ -468,6 +498,25 @@ function App() {
       }
     };
 
+    const getColorForValue = (value) => {
+      if (value <= 3) return 'text-red-600 bg-red-100';
+      if (value <= 7) return 'text-yellow-600 bg-yellow-100';
+      return 'text-green-600 bg-green-100';
+    };
+
+    const getMuscleGroupLabel = (group) => {
+      const labels = {
+        'legs': 'Piernas',
+        'arms': 'Brazos',
+        'back': 'Espalda',
+        'shoulders': 'Hombros',
+        'neck': 'Cuello',
+        'core': 'Core/Abdomen',
+        'general': 'General'
+      };
+      return labels[group] || group;
+    };
+
     return (
       <div className="min-h-screen bg-gray-50">
         <div className="bg-white shadow">
@@ -520,6 +569,16 @@ function App() {
                 👥 Jugadores ({players.length})
               </button>
               <button
+                onClick={() => setActiveTab('wellness')}
+                className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'wellness'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                💚 Bienestar ({wellnessLogs.length})
+              </button>
+              <button
                 onClick={() => setActiveTab('settings')}
                 className={`py-4 px-1 border-b-2 font-medium text-sm ${
                   activeTab === 'settings'
@@ -559,15 +618,15 @@ function App() {
                 <div className="bg-white rounded-lg shadow p-6">
                   <div className="flex items-center">
                     <div className="flex-shrink-0 bg-green-100 rounded-md p-3">
-                      <span className="text-2xl">⚽</span>
+                      <span className="text-2xl">💚</span>
                     </div>
                     <div className="ml-5 w-0 flex-1">
                       <dl>
                         <dt className="text-sm font-medium text-gray-500 truncate">
-                          Equipo
+                          Registros de Bienestar
                         </dt>
-                        <dd className="text-lg font-bold text-gray-900">
-                          {currentUser?.team_name}
+                        <dd className="text-3xl font-bold text-gray-900">
+                          {wellnessLogs.length}
                         </dd>
                       </dl>
                     </div>
@@ -608,11 +667,17 @@ function App() {
                     Ver Jugadores
                   </button>
                   <button
+                    onClick={() => setActiveTab('wellness')}
+                    className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
+                  >
+                    Ver Bienestar
+                  </button>
+                  <button
                     onClick={() => {
                       setActiveTab('players');
                       setTimeout(() => setShowAddPlayer(true), 100);
                     }}
-                    className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
+                    className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700"
                   >
                     + Agregar Jugador
                   </button>
@@ -806,6 +871,134 @@ function App() {
             </div>
           )}
 
+          {activeTab === 'wellness' && (
+            <div>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-gray-900">
+                  Registros de Bienestar del Equipo
+                </h2>
+                <div className="flex gap-2">
+                  <select
+                    value={selectedPlayer || ''}
+                    onChange={(e) => setSelectedPlayer(e.target.value || null)}
+                    className="px-4 py-2 border border-gray-300 rounded-lg"
+                  >
+                    <option value="">Todos los jugadores</option>
+                    {players.map(player => (
+                      <option key={player.id} value={player.id}>{player.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={loadWellnessLogs}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+                  >
+                    🔄 Actualizar
+                  </button>
+                </div>
+              </div>
+
+              {loadingWellness ? (
+                <div className="text-center py-12">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+                  <p className="text-gray-600 mt-4">Cargando registros...</p>
+                </div>
+              ) : wellnessLogs.length === 0 ? (
+                <div className="bg-white rounded-lg shadow p-12 text-center">
+                  <div className="text-6xl mb-4">📊</div>
+                  <h3 className="text-xl font-bold text-gray-900 mb-2">
+                    No hay registros todavía
+                  </h3>
+                  <p className="text-gray-600">
+                    Los jugadores aún no han completado ningún registro de bienestar
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {wellnessLogs
+                    .filter(log => !selectedPlayer || log.player_id === selectedPlayer)
+                    .map((log) => (
+                    <div key={log.id} className="bg-white rounded-lg shadow p-6">
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="flex items-center">
+                          <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold">
+                            {log.players?.number || '?'}
+                          </div>
+                          <div className="ml-3">
+                            <p className="font-bold text-gray-900">{log.players?.name}</p>
+                            <p className="text-sm text-gray-500">{log.players?.position || 'Sin posición'}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-medium text-gray-900">
+                            {new Date(log.created_at).toLocaleDateString('es-ES', {
+                              weekday: 'long',
+                              year: 'numeric',
+                              month: 'long',
+                              day: 'numeric'
+                            })}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {new Date(log.created_at).toLocaleTimeString('es-ES', {
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-5 gap-3 mb-4">
+                        <div className="text-center">
+                          <div className="text-xs text-gray-500 mb-1">Sueño</div>
+                          <div className={`text-xl font-bold px-3 py-2 rounded ${getColorForValue(log.sleep_quality)}`}>
+                            {log.sleep_quality}
+                          </div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-xs text-gray-500 mb-1">Dolor</div>
+                          <div className={`text-xl font-bold px-3 py-2 rounded ${getColorForValue(11 - log.muscle_soreness)}`}>
+                            {log.muscle_soreness}
+                          </div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-xs text-gray-500 mb-1">Estrés</div>
+                          <div className={`text-xl font-bold px-3 py-2 rounded ${getColorForValue(11 - log.stress_level)}`}>
+                            {log.stress_level}
+                          </div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-xs text-gray-500 mb-1">Energía</div>
+                          <div className={`text-xl font-bold px-3 py-2 rounded ${getColorForValue(log.energy_level)}`}>
+                            {log.energy_level}
+                          </div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-xs text-gray-500 mb-1">Ánimo</div>
+                          <div className={`text-xl font-bold px-3 py-2 rounded ${getColorForValue(log.mood)}`}>
+                            {log.mood}
+                          </div>
+                        </div>
+                      </div>
+
+                      {log.muscle_group && (
+                        <div className="mb-3">
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-orange-100 text-orange-800">
+                            💪 Dolor en: {getMuscleGroupLabel(log.muscle_group)}
+                          </span>
+                        </div>
+                      )}
+
+                      {log.notes && (
+                        <div className="pt-3 border-t">
+                          <p className="text-sm text-gray-600 italic">"{log.notes}"</p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {activeTab === 'settings' && (
             <div className="bg-white rounded-lg shadow p-6">
               <h2 className="text-2xl font-bold text-gray-900 mb-6">
@@ -889,11 +1082,13 @@ function App() {
       stress_level: 5,
       energy_level: 5,
       mood: 5,
+      muscle_group: '',
       notes: ''
     });
     const [history, setHistory] = useState([]);
     const [loadingHistory, setLoadingHistory] = useState(false);
     const [submitting, setSubmitting] = useState(false);
+    const [justSubmitted, setJustSubmitted] = useState(false);
 
     useEffect(() => {
       if (currentUser?.playerId) {
@@ -922,7 +1117,11 @@ function App() {
 
     const submitWellness = async () => {
       setSubmitting(true);
+      setJustSubmitted(false);
+      
       try {
+        const now = new Date();
+        
         const { data, error } = await supabase
           .from('wellness_logs')
           .insert([
@@ -934,7 +1133,9 @@ function App() {
               stress_level: wellnessData.stress_level,
               energy_level: wellnessData.energy_level,
               mood: wellnessData.mood,
-              notes: wellnessData.notes || null
+              muscle_group: wellnessData.muscle_group || null,
+              notes: wellnessData.notes || null,
+              created_at: now.toISOString()
             }
           ])
           .select()
@@ -942,7 +1143,7 @@ function App() {
 
         if (error) throw error;
 
-        alert('✅ Datos de bienestar enviados correctamente');
+        setJustSubmitted(true);
         setHistory([data, ...history]);
         
         setWellnessData({
@@ -951,8 +1152,11 @@ function App() {
           stress_level: 5,
           energy_level: 5,
           mood: 5,
+          muscle_group: '',
           notes: ''
         });
+
+        setTimeout(() => setJustSubmitted(false), 3000);
       } catch (err) {
         console.error('Error al enviar datos:', err);
         alert('Error al enviar los datos: ' + err.message);
@@ -965,6 +1169,19 @@ function App() {
       if (value <= 3) return 'text-red-600 bg-red-100';
       if (value <= 7) return 'text-yellow-600 bg-yellow-100';
       return 'text-green-600 bg-green-100';
+    };
+
+    const getMuscleGroupLabel = (group) => {
+      const labels = {
+        'legs': 'Piernas',
+        'arms': 'Brazos',
+        'back': 'Espalda',
+        'shoulders': 'Hombros',
+        'neck': 'Cuello',
+        'core': 'Core/Abdomen',
+        'general': 'General'
+      };
+      return labels[group] || group;
     };
 
     return (
@@ -998,6 +1215,14 @@ function App() {
         </div>
 
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          
+          {justSubmitted && (
+            <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg animate-pulse">
+              <p className="text-green-800 font-semibold text-center">
+                ✅ ¡Registro enviado exitosamente a las {new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}!
+              </p>
+            </div>
+          )}
           
           <div className="bg-white rounded-lg shadow p-6 mb-6">
             <h2 className="text-xl font-bold text-gray-900 mb-6">
@@ -1049,6 +1274,28 @@ function App() {
                   <span>Sin dolor</span>
                   <span>Dolor severo</span>
                 </div>
+                
+                {wellnessData.muscle_soreness > 3 && (
+                  <div className="mt-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      ¿Dónde sientes el dolor?
+                    </label>
+                    <select
+                      value={wellnessData.muscle_group}
+                      onChange={(e) => setWellnessData({ ...wellnessData, muscle_group: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                    >
+                      <option value="">Selecciona una zona</option>
+                      <option value="legs">🦵 Piernas</option>
+                      <option value="arms">💪 Brazos</option>
+                      <option value="back">🔙 Espalda</option>
+                      <option value="shoulders">🤸 Hombros</option>
+                      <option value="neck">🗣️ Cuello</option>
+                      <option value="core">⚡ Core/Abdomen</option>
+                      <option value="general">🌐 General</option>
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -1171,15 +1418,16 @@ function App() {
                           day: 'numeric'
                         })}
                       </span>
-                      <span className="text-xs text-gray-500">
+                      <span className="text-xs text-gray-500 font-mono">
                         {new Date(log.created_at).toLocaleTimeString('es-ES', {
                           hour: '2-digit',
-                          minute: '2-digit'
+                          minute: '2-digit',
+                          second: '2-digit'
                         })}
                       </span>
                     </div>
                     
-                    <div className="grid grid-cols-5 gap-2 text-center">
+                    <div className="grid grid-cols-5 gap-2 text-center mb-3">
                       <div>
                         <div className="text-xs text-gray-500 mb-1">Sueño</div>
                         <div className={`text-lg font-bold px-2 py-1 rounded ${getColorForValue(log.sleep_quality)}`}>
@@ -1211,9 +1459,17 @@ function App() {
                         </div>
                       </div>
                     </div>
+
+                    {log.muscle_group && (
+                      <div className="mb-2">
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                          💪 {getMuscleGroupLabel(log.muscle_group)}
+                        </span>
+                      </div>
+                    )}
                     
                     {log.notes && (
-                      <div className="mt-3 pt-3 border-t">
+                      <div className="pt-3 border-t">
                         <p className="text-sm text-gray-600 italic">"{log.notes}"</p>
                       </div>
                     )}
