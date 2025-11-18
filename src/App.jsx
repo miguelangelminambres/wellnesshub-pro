@@ -350,6 +350,7 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
   const [wellnessLogs, setWellnessLogs] = useState([]);
   const [showAddPlayer, setShowAddPlayer] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState('all');
+  const [alerts, setAlerts] = useState([]);
   const [newPlayer, setNewPlayer] = useState({
     name: '',
     email: '',
@@ -364,6 +365,12 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
       loadWellnessLogs();
     }
   }, [currentUser]);
+
+  useEffect(() => {
+    if (wellnessLogs.length > 0 && players.length > 0) {
+      generateAlerts();
+    }
+  }, [wellnessLogs, players]);
 
   const loadPlayers = async () => {
     const { data } = await supabase
@@ -381,6 +388,97 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
       .eq('team_id', currentUser.id)
       .order('created_at', { ascending: false });
     setWellnessLogs(data || []);
+  };
+
+  // 🚨 SISTEMA DE ALERTAS INTELIGENTES
+  const generateAlerts = () => {
+    const newAlerts = [];
+    const today = new Date();
+    const threeDaysAgo = new Date(today.getTime() - 3 * 24 * 60 * 60 * 1000);
+
+    players.forEach(player => {
+      const playerLogs = wellnessLogs.filter(log => log.player_id === player.id);
+      
+      if (playerLogs.length === 0) return;
+
+      // Últimos 3 registros del jugador
+      const recentLogs = playerLogs.slice(0, 3);
+      const latestLog = playerLogs[0];
+
+      // ALERTA 1: Dolor muscular alto persistente
+      const highPainCount = recentLogs.filter(log => log.muscle_soreness >= 7).length;
+      if (highPainCount >= 2) {
+        newAlerts.push({
+          type: 'critical',
+          icon: '🔴',
+          player: player.name,
+          number: player.number,
+          message: `Dolor muscular alto (${latestLog.muscle_soreness}/10) - ${highPainCount} registros recientes`,
+          detail: latestLog.muscle_group || 'Zona no especificada'
+        });
+      }
+
+      // ALERTA 2: Estrés muy alto
+      if (latestLog.stress_level >= 8) {
+        newAlerts.push({
+          type: 'warning',
+          icon: '😰',
+          player: player.name,
+          number: player.number,
+          message: `Nivel de estrés muy alto (${latestLog.stress_level}/10)`,
+          detail: 'Considera hablar con el jugador'
+        });
+      }
+
+      // ALERTA 3: Sueño malo
+      if (latestLog.sleep_quality <= 3) {
+        newAlerts.push({
+          type: 'warning',
+          icon: '😴',
+          player: player.name,
+          number: player.number,
+          message: `Calidad de sueño muy baja (${latestLog.sleep_quality}/10)`,
+          detail: 'Puede afectar el rendimiento'
+        });
+      }
+
+      // ALERTA 4: Energía muy baja
+      if (latestLog.energy_level <= 3) {
+        newAlerts.push({
+          type: 'info',
+          icon: '🔋',
+          player: player.name,
+          number: player.number,
+          message: `Nivel de energía bajo (${latestLog.energy_level}/10)`,
+          detail: 'Monitorear en los próximos entrenamientos'
+        });
+      }
+
+      // ALERTA 5: Tendencia negativa (últimos 3 registros empeorando)
+      if (recentLogs.length >= 3) {
+        const avgFirst = (recentLogs[2].sleep_quality + recentLogs[2].energy_level + (11 - recentLogs[2].stress_level)) / 3;
+        const avgLast = (latestLog.sleep_quality + latestLog.energy_level + (11 - latestLog.stress_level)) / 3;
+        
+        if (avgLast < avgFirst - 2) {
+          newAlerts.push({
+            type: 'info',
+            icon: '📉',
+            player: player.name,
+            number: player.number,
+            message: 'Tendencia negativa en el bienestar general',
+            detail: 'Ha empeorado en los últimos registros'
+          });
+        }
+      }
+    });
+
+    // Ordenar por criticidad
+    newAlerts.sort((a, b) => {
+      const priority = { critical: 0, warning: 1, info: 2 };
+      return priority[a.type] - priority[b.type];
+    });
+
+    setAlerts(newAlerts);
   };
 
   const addPlayer = async () => {
@@ -486,6 +584,15 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
     ? wellnessLogs
     : wellnessLogs.filter(log => log.player_id === selectedPlayer);
 
+  const getAlertColor = (type) => {
+    switch(type) {
+      case 'critical': return 'bg-red-50 border-red-300 text-red-800';
+      case 'warning': return 'bg-yellow-50 border-yellow-300 text-yellow-800';
+      case 'info': return 'bg-blue-50 border-blue-300 text-blue-800';
+      default: return 'bg-gray-50 border-gray-300 text-gray-800';
+    }
+  };
+
   return (
     <div className="min-h-screen p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
@@ -514,7 +621,7 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
         <div className="bg-white rounded-lg shadow-lg mb-6 overflow-x-auto">
           <div className="flex border-b min-w-max md:min-w-0">
             {[
-              { id: 'overview', icon: '📊', label: 'Resumen' },
+              { id: 'overview', icon: '📊', label: 'Resumen', count: alerts.length > 0 ? alerts.length : undefined },
               { id: 'players', icon: '👥', label: 'Jugadores', count: players.length },
               { id: 'wellness', icon: '💚', label: 'Bienestar', count: wellnessLogs.length },
               { id: 'settings', icon: '⚙️', label: 'Configuración' }
@@ -522,13 +629,21 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex-1 px-4 md:px-6 py-4 font-medium transition-colors whitespace-nowrap ${
+                className={`flex-1 px-4 md:px-6 py-4 font-medium transition-colors whitespace-nowrap relative ${
                   activeTab === tab.id
                     ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
                     : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
                 }`}
               >
-                {tab.icon} {tab.label} {tab.count !== undefined && `(${tab.count})`}
+                {tab.icon} {tab.label} 
+                {tab.count !== undefined && (
+                  <span className={`ml-1 ${tab.id === 'overview' && alerts.length > 0 ? 'text-red-600 font-bold' : ''}`}>
+                    ({tab.count})
+                  </span>
+                )}
+                {tab.id === 'overview' && alerts.length > 0 && (
+                  <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+                )}
               </button>
             ))}
           </div>
@@ -536,10 +651,56 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
 
         {/* Contenido de las pestañas */}
         <div className="bg-white rounded-lg shadow-lg p-4 md:p-6">
-          {/* RESUMEN */}
+          {/* RESUMEN CON ALERTAS */}
           {activeTab === 'overview' && (
             <div className="space-y-6">
               <h3 className="text-xl font-semibold mb-4">📊 Resumen General</h3>
+              
+              {/* SISTEMA DE ALERTAS */}
+              {alerts.length > 0 && (
+                <div className="mb-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="text-lg font-semibold text-gray-800 flex items-center">
+                      🚨 Alertas del Equipo
+                      <span className="ml-2 px-2 py-1 bg-red-100 text-red-600 rounded-full text-sm font-bold">
+                        {alerts.length}
+                      </span>
+                    </h4>
+                    <button
+                      onClick={() => setAlerts([])}
+                      className="text-sm text-gray-500 hover:text-gray-700"
+                    >
+                      Limpiar alertas
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    {alerts.map((alert, index) => (
+                      <div key={index} className={`border-2 rounded-lg p-4 ${getAlertColor(alert.type)}`}>
+                        <div className="flex items-start space-x-3">
+                          <div className="text-3xl">{alert.icon}</div>
+                          <div className="flex-1">
+                            <div className="flex items-center space-x-2 mb-1">
+                              <span className="font-bold text-blue-600">#{alert.number || '-'}</span>
+                              <span className="font-semibold">{alert.player}</span>
+                            </div>
+                            <div className="font-medium mb-1">{alert.message}</div>
+                            <div className="text-sm opacity-75">{alert.detail}</div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {alerts.length === 0 && wellnessLogs.length > 0 && (
+                <div className="mb-6 bg-green-50 border-2 border-green-200 rounded-lg p-6 text-center">
+                  <div className="text-4xl mb-2">✅</div>
+                  <div className="text-green-800 font-semibold">¡Todo en orden!</div>
+                  <div className="text-green-600 text-sm mt-1">No hay alertas críticas en este momento</div>
+                </div>
+              )}
               
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-blue-50 p-6 rounded-lg border border-blue-200">
