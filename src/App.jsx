@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
+// Inicializar Supabase
 const supabase = createClient(
-  'https://zyducbruxaqpuupioaoe.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp5ZHVjYnJ1eGFxcHV1cGlvYW9lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwNjUyNzEsImV4cCI6MjA3ODY0MTI3MX0.8Dd0ZFogpaPYXft5sdbS5SBaPaNr26qr5Z8-hr1X_9M'
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY
 );
 
 function App() {
@@ -11,338 +12,306 @@ function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  const LicenseScreen = () => {
-    const [license, setLicense] = useState('');
-    const [step, setStep] = useState('input');
-    const [licenseData, setLicenseData] = useState(null);
-    const [errorMsg, setErrorMsg] = useState('');
-    const [teamData, setTeamData] = useState({
-      teamName: '',
-      coachName: '',
-      email: '',
-      password: ''
-    });
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+      {view === 'license' && <LicenseScreen setView={setView} setCurrentUser={setCurrentUser} setLoading={setLoading} />}
+      {view === 'login' && <LoginScreen setView={setView} setCurrentUser={setCurrentUser} setLoading={setLoading} />}
+      {view === 'coach-dashboard' && <CoachDashboard currentUser={currentUser} setView={setView} setCurrentUser={setCurrentUser} />}
+      {view === 'player-panel' && <PlayerPanel currentUser={currentUser} setView={setView} />}
+    </div>
+  );
+}
 
-    const validateLicense = async () => {
+// PANTALLA DE LICENCIA
+const LicenseScreen = ({ setView, setCurrentUser, setLoading }) => {
+  const [license, setLicense] = useState('');
+  const [step, setStep] = useState('input');
+  const [licenseData, setLicenseData] = useState(null);
+  const [teamData, setTeamData] = useState({
+    teamName: '',
+    coachName: '',
+    email: '',
+    password: ''
+  });
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const validateLicense = async () => {
+    try {
+      setLoading(true);
+      setErrorMsg('');
       const cleanLicense = license.trim().toUpperCase();
-      
+
       if (!cleanLicense || cleanLicense.length < 10) {
         setErrorMsg('Por favor introduce una licencia válida');
+        setLoading(false);
         return;
       }
-      
-      if (!cleanLicense.includes('WELLNESS')) {
-        setErrorMsg('Licencia inválida. Debe contener WELLNESS');
+
+      const { data, error } = await supabase
+        .from('licenses')
+        .select('*')
+        .eq('license_key', cleanLicense)
+        .single();
+
+      if (error || !data) {
+        setErrorMsg('❌ Licencia no válida');
+        setLoading(false);
         return;
       }
-      
-      setStep('loading');
+
+      if (data.status !== 'active') {
+        setErrorMsg('❌ Esta licencia ya ha sido utilizada');
+        setLoading(false);
+        return;
+      }
+
+      setLicenseData(data);
+      setStep('register');
+      setLoading(false);
+    } catch (err) {
+      setErrorMsg('Error: ' + err.message);
+      setLoading(false);
+    }
+  };
+
+  const registerTeam = async () => {
+    try {
+      setLoading(true);
       setErrorMsg('');
-      
-      try {
-        const { data, error } = await supabase
-          .from('licenses')
-          .select('*')
-          .eq('license_key', cleanLicense)
-          .maybeSingle();
 
-        if (!data) {
-          setStep('input');
-          setErrorMsg('❌ Licencia no válida. Esta licencia no existe en el sistema.');
-          return;
-        }
-
-        if (data.status === 'used') {
-          setStep('input');
-          setErrorMsg('❌ Esta licencia ya ha sido activada anteriormente.');
-          return;
-        }
-
-        setLicenseData(data);
-        setStep('register');
-        
-      } catch (err) {
-        console.error('Error:', err);
-        setStep('input');
-        setErrorMsg('Error al validar la licencia: ' + err.message);
-      }
-    };
-
-    const createTeam = async () => {
       if (!teamData.teamName || !teamData.coachName || !teamData.email || !teamData.password) {
         setErrorMsg('Por favor completa todos los campos');
+        setLoading(false);
         return;
       }
 
-      if (!licenseData) {
-        setErrorMsg('Error: No hay datos de licencia válidos');
+      // Verificar si el email ya existe
+      const { data: existingTeam } = await supabase
+        .from('teams')
+        .select('email')
+        .eq('email', teamData.email);
+
+      if (existingTeam && existingTeam.length > 0) {
+        setErrorMsg('❌ Este email ya está registrado');
+        setLoading(false);
         return;
       }
 
-      setStep('loading');
-      setErrorMsg('');
-
-      try {
-        const cleanLicense = license.trim().toUpperCase();
-        
-        const { data: newTeam, error: teamError } = await supabase
-          .from('teams')
-          .insert([
-            {
-              license: cleanLicense,
-              team_name: teamData.teamName,
-              coach_name: teamData.coachName,
-              coach_email: teamData.email,
-              coach_password: teamData.password
-            }
-          ])
-          .select()
-          .single();
-
-        if (teamError) {
-          console.error('Error al crear equipo:', teamError);
-          setStep('register');
-          if (teamError.code === '23505') {
-            setErrorMsg('Este email ya está registrado');
-          } else {
-            setErrorMsg('Error: ' + teamError.message);
+      // Crear equipo
+      const { data: newTeam, error: teamError } = await supabase
+        .from('teams')
+        .insert([
+          {
+            name: teamData.teamName,
+            coach_name: teamData.coachName,
+            email: teamData.email,
+            password: teamData.password,
+            license: licenseData.license_key
           }
-          return;
-        }
+        ])
+        .select()
+        .single();
 
-        const { error: updateError } = await supabase
-          .from('licenses')
-          .update({ 
-            status: 'used',
-            used_at: new Date().toISOString(),
-            user_email: teamData.email,
-            team_id: newTeam.id
-          })
-          .eq('id', licenseData.id);
+      if (teamError) throw teamError;
 
-        if (updateError) {
-          console.error('Error al actualizar licencia:', updateError);
-        }
+      // Marcar licencia como usada
+      await supabase
+        .from('licenses')
+        .update({
+          status: 'used',
+          used_at: new Date().toISOString(),
+          user_email: teamData.email,
+          team_id: newTeam.id
+        })
+        .eq('license_key', licenseData.license_key);
 
-        setStep('success');
-        setTimeout(() => {
-          setView('login');
-        }, 1500);
-        
-      } catch (err) {
-        console.error('Error:', err);
-        setStep('register');
-        setErrorMsg('Error al crear la cuenta: ' + err.message);
-      }
-    };
+      alert('✅ ¡Registro exitoso! Ahora puedes iniciar sesión.');
+      setView('login');
+      setLoading(false);
+    } catch (err) {
+      setErrorMsg('Error: ' + err.message);
+      setLoading(false);
+    }
+  };
 
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-600 to-green-600 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
-          
-          <div className="text-center mb-6">
-            <h1 className="text-3xl font-bold text-gray-800 mb-2">⚽ WellnessHub Pro</h1>
-            <p className="text-gray-600">Sistema Profesional de Control de Bienestar</p>
-          </div>
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
+        <div className="text-center mb-8">
+          <div className="text-5xl mb-4">⚽</div>
+          <h1 className="text-3xl font-bold text-gray-800 mb-2">WellnessHub Pro</h1>
+          <p className="text-gray-600">Monitoreo de Bienestar Deportivo</p>
+        </div>
 
-          {errorMsg && (
-            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-sm text-red-800">{errorMsg}</p>
-            </div>
-          )}
-
-          {step === 'input' && (
-            <div>
+        {step === 'input' && (
+          <>
+            <div className="mb-6">
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Introduce tu clave de licencia
+                Código de Licencia
               </label>
               <input
                 type="text"
-                placeholder="WELLNESS-202511-XXXX-XXXX-XX"
                 value={license}
-                onChange={(e) => {
-                  setLicense(e.target.value.toUpperCase());
-                  setErrorMsg('');
-                }}
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter' && license) {
-                    validateLicense();
-                  }
-                }}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 mb-4 font-mono text-sm"
+                onChange={(e) => setLicense(e.target.value)}
+                placeholder="XXXXX-XXXXX-XXXXX"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
-              <button
-                onClick={validateLicense}
-                disabled={!license}
-                className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition disabled:bg-gray-400"
-              >
-                Validar Licencia
-              </button>
+            </div>
+
+            {errorMsg && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
+                {errorMsg}
+              </div>
+            )}
+
+            <button
+              onClick={validateLicense}
+              className="w-full bg-blue-500 text-white py-3 rounded-lg hover:bg-blue-600 transition-colors font-medium"
+            >
+              Validar Licencia
+            </button>
+
+            <div className="mt-6 text-center">
               <button
                 onClick={() => setView('login')}
-                className="w-full mt-3 text-blue-600 hover:text-blue-800 font-medium"
+                className="text-blue-500 hover:text-blue-600 text-sm font-medium"
               >
-                Ya tengo una cuenta
+                ¿Ya tienes cuenta? Inicia sesión →
               </button>
-              
-              <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
-                <p className="font-semibold mb-1">ℹ️ Formato de licencia:</p>
-                <code className="text-xs">WELLNESS-YYYYMM-XXXX-XXXX-CC</code>
-              </div>
             </div>
-          )}
+          </>
+        )}
 
-          {step === 'loading' && (
-            <div className="text-center py-8">
-              <svg className="animate-spin h-12 w-12 text-blue-600 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              <p className="text-gray-600">Procesando...</p>
+        {step === 'register' && (
+          <>
+            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
+              ✅ Licencia válida. Completa tu registro:
             </div>
-          )}
 
-          {step === 'register' && (
-            <div>
-              <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-                <p className="text-sm text-green-800">
-                  ✅ Licencia válida: <code className="font-mono font-bold">{license}</code>
-                </p>
-              </div>
-              
-              <h2 className="text-xl font-bold text-gray-800 mb-4">Crea tu Cuenta</h2>
-              
+            <div className="space-y-4 mb-6">
               <input
                 type="text"
-                placeholder="Nombre del Equipo"
+                placeholder="Nombre del equipo"
                 value={teamData.teamName}
-                onChange={(e) => setTeamData({ ...teamData, teamName: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg mb-3 focus:ring-2 focus:ring-green-500"
+                onChange={(e) => setTeamData({...teamData, teamName: e.target.value})}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
               <input
                 type="text"
-                placeholder="Tu Nombre Completo"
+                placeholder="Nombre del entrenador"
                 value={teamData.coachName}
-                onChange={(e) => setTeamData({ ...teamData, coachName: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg mb-3 focus:ring-2 focus:ring-green-500"
+                onChange={(e) => setTeamData({...teamData, coachName: e.target.value})}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
               <input
                 type="email"
                 placeholder="Email"
                 value={teamData.email}
-                onChange={(e) => setTeamData({ ...teamData, email: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg mb-3 focus:ring-2 focus:ring-green-500"
+                onChange={(e) => setTeamData({...teamData, email: e.target.value})}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
               <input
                 type="password"
                 placeholder="Contraseña"
                 value={teamData.password}
-                onChange={(e) => setTeamData({ ...teamData, password: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg mb-4 focus:ring-2 focus:ring-green-500"
+                onChange={(e) => setTeamData({...teamData, password: e.target.value})}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
-              
-              <button
-                onClick={createTeam}
-                className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition"
-              >
-                🚀 Activar Licencia y Crear Cuenta
-              </button>
-              
-              <button
-                onClick={() => {
-                  setStep('input');
-                  setLicenseData(null);
-                  setErrorMsg('');
-                }}
-                className="w-full mt-2 text-gray-600 hover:text-gray-800 font-medium text-sm"
-              >
-                ← Volver
-              </button>
             </div>
-          )}
 
-          {step === 'success' && (
-            <div className="text-center py-8">
-              <div className="text-6xl mb-4">🎉</div>
-              <h2 className="text-2xl font-bold text-gray-800 mb-2">¡Cuenta Creada!</h2>
-              <p className="text-gray-600 mb-4">Tu licencia ha sido activada exitosamente.</p>
-              <p className="text-sm text-gray-500">Redirigiendo al login...</p>
-            </div>
-          )}
+            {errorMsg && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
+                {errorMsg}
+              </div>
+            )}
 
-        </div>
+            <button
+              onClick={registerTeam}
+              className="w-full bg-green-500 text-white py-3 rounded-lg hover:bg-green-600 transition-colors font-medium"
+            >
+              Completar Registro
+            </button>
+          </>
+        )}
       </div>
-    );
-  };
+    </div>
+  );
+};
 
-  const LoginScreen = () => {
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
+// PANTALLA DE LOGIN
+const LoginScreen = ({ setView, setCurrentUser, setLoading }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
 
-    const handleLogin = async () => {
+  const handleLogin = async () => {
+    try {
+      setLoading(true);
+
       if (!email || !password) {
         alert('Por favor completa todos los campos');
+        setLoading(false);
         return;
       }
 
-      setLoading(true);
+      // Intentar login como entrenador
+      const { data: coaches } = await supabase
+        .from('teams')
+        .select('*')
+        .eq('email', email)
+        .eq('password', password);
 
-      try {
-        const { data: coach } = await supabase
-          .from('teams')
-          .select('*')
-          .eq('coach_email', email)
-          .eq('coach_password', password)
-          .maybeSingle();
-
-        if (coach) {
-          setCurrentUser({ role: 'coach', teamId: coach.id, ...coach });
-          setView('coach-dashboard');
-          setLoading(false);
-          return;
-        }
-
-        const { data: players } = await supabase
-          .from('players')
-          .select('*')
-          .eq('email', email)
-          .eq('password', password);
-
-        if (players && players.length > 0) {
-          const player = players[0];
-          setCurrentUser({ 
-            role: 'player', 
-            teamId: player.team_id, 
-            playerId: player.id,
-            ...player 
-          });
-          setView('player-form');
-          setLoading(false);
-          return;
-        }
-
-        alert('❌ Email o contraseña incorrectos');
-      } catch (err) {
-        console.error('Error login:', err);
-        alert('Error al iniciar sesión: ' + err.message);
-      } finally {
+      if (coaches && coaches.length > 0) {
+        const coach = coaches[0];
+        setCurrentUser({ role: 'coach', teamId: coach.id, ...coach });
+        setView('coach-dashboard');
         setLoading(false);
+        return;
       }
-    };
 
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-600 to-green-600 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
-          <div className="text-center mb-6">
-            <h1 className="text-3xl font-bold text-gray-800 mb-2">⚽ WellnessHub Pro</h1>
-            <p className="text-gray-600">Iniciar Sesión</p>
-          </div>
+      // Intentar login como jugador
+      const { data: players } = await supabase
+        .from('players')
+        .select('*')
+        .eq('email', email)
+        .eq('password', password);
+
+      if (players && players.length > 0) {
+        const player = players[0];
+        setCurrentUser({
+          role: 'player',
+          teamId: player.team_id,
+          playerId: player.id,
+          ...player
+        });
+        setView('player-panel');
+        setLoading(false);
+        return;
+      }
+
+      alert('❌ Email o contraseña incorrectos');
+      setLoading(false);
+    } catch (err) {
+      alert('Error: ' + err.message);
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
+        <div className="text-center mb-8">
+          <div className="text-5xl mb-4">⚽</div>
+          <h1 className="text-3xl font-bold text-gray-800 mb-2">WellnessHub Pro</h1>
+          <p className="text-gray-600">Iniciar Sesión</p>
+        </div>
+
+        <div className="space-y-4 mb-6">
           <input
             type="email"
             placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg mb-3 focus:ring-2 focus:ring-blue-500"
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
           />
           <input
             type="password"
@@ -350,360 +319,278 @@ function App() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg mb-4 focus:ring-2 focus:ring-blue-500"
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
           />
-          <button
-            onClick={handleLogin}
-            disabled={loading}
-            className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition disabled:bg-gray-400"
-          >
-            {loading ? 'Iniciando...' : 'Iniciar Sesión'}
-          </button>
+        </div>
+
+        <button
+          onClick={handleLogin}
+          className="w-full bg-blue-500 text-white py-3 rounded-lg hover:bg-blue-600 transition-colors font-medium mb-4"
+        >
+          Iniciar Sesión
+        </button>
+
+        <div className="text-center">
           <button
             onClick={() => setView('license')}
-            className="w-full mt-3 text-blue-600 hover:text-blue-800 font-medium"
+            className="text-blue-500 hover:text-blue-600 text-sm font-medium"
           >
-            Activar nueva licencia
+            ¿No tienes cuenta? Activa tu licencia →
           </button>
         </div>
       </div>
-    );
+    </div>
+  );
+};
+
+// DASHBOARD DEL ENTRENADOR
+const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
+  const [activeTab, setActiveTab] = useState('overview');
+  const [players, setPlayers] = useState([]);
+  const [wellnessLogs, setWellnessLogs] = useState([]);
+  const [showAddPlayer, setShowAddPlayer] = useState(false);
+  const [selectedPlayer, setSelectedPlayer] = useState('all');
+  const [newPlayer, setNewPlayer] = useState({
+    name: '',
+    email: '',
+    password: '',
+    number: '',
+    position: ''
+  });
+
+  useEffect(() => {
+    if (currentUser?.id) {
+      loadPlayers();
+      loadWellnessLogs();
+    }
+  }, [currentUser]);
+
+  const loadPlayers = async () => {
+    const { data } = await supabase
+      .from('players')
+      .select('*')
+      .eq('team_id', currentUser.id)
+      .order('created_at', { ascending: false });
+    setPlayers(data || []);
   };
 
-  const CoachDashboard = () => {
-    const [activeTab, setActiveTab] = useState('overview');
-    const [players, setPlayers] = useState([]);
-    const [wellnessLogs, setWellnessLogs] = useState([]);
-    const [showAddPlayer, setShowAddPlayer] = useState(false);
-    const [selectedPlayer, setSelectedPlayer] = useState(null);
-    const [newPlayer, setNewPlayer] = useState({
-      name: '',
-      email: '',
-      password: '',
-      position: '',
-      number: ''
-    });
-    const [loadingPlayers, setLoadingPlayers] = useState(false);
-    const [loadingWellness, setLoadingWellness] = useState(false);
+  const loadWellnessLogs = async () => {
+    const { data } = await supabase
+      .from('wellness_logs')
+      .select('*, players(*)')
+      .eq('team_id', currentUser.id)
+      .order('created_at', { ascending: false });
+    setWellnessLogs(data || []);
+  };
 
-    useEffect(() => {
-      if (currentUser?.id) {
-        loadPlayers();
-        loadWellnessLogs();
-      }
-    }, [currentUser]);
-
-    const loadPlayers = async () => {
-      setLoadingPlayers(true);
-      try {
-        const { data, error } = await supabase
-          .from('players')
-          .select('*')
-          .eq('team_id', currentUser.id)
-          .order('created_at', { ascending: false });
-
-        if (error) throw error;
-        setPlayers(data || []);
-      } catch (err) {
-        console.error('Error al cargar jugadores:', err);
-        alert('Error al cargar los jugadores');
-      } finally {
-        setLoadingPlayers(false);
-      }
-    };
-
-    const loadWellnessLogs = async () => {
-      setLoadingWellness(true);
-      try {
-        const { data, error } = await supabase
-          .from('wellness_logs')
-          .select(`
-            *,
-            players (
-              name,
-              number,
-              position
-            )
-          `)
-          .eq('team_id', currentUser.id)
-          .order('created_at', { ascending: false })
-          .limit(50);
-
-        if (error) throw error;
-        setWellnessLogs(data || []);
-      } catch (err) {
-        console.error('Error al cargar registros de bienestar:', err);
-      } finally {
-        setLoadingWellness(false);
-      }
-    };
-
-    const addPlayer = async () => {
+  const addPlayer = async () => {
+    try {
       if (!newPlayer.name || !newPlayer.email || !newPlayer.password) {
-        alert('Por favor completa los campos obligatorios: Nombre, Email y Contraseña');
+        alert('Por favor completa los campos obligatorios (nombre, email, contraseña)');
         return;
       }
 
-      try {
-        const { data, error } = await supabase
-          .from('players')
-          .insert([
-            {
-              team_id: currentUser.id,
-              name: newPlayer.name,
-              email: newPlayer.email,
-              password: newPlayer.password,
-              position: newPlayer.position || null,
-              number: newPlayer.number || null
-            }
-          ])
-          .select()
-          .single();
+      // Verificar si el email ya existe
+      const { data: existingPlayer } = await supabase
+        .from('players')
+        .select('email')
+        .eq('email', newPlayer.email);
 
-        if (error) {
-          if (error.code === '23505') {
-            alert('Este email ya está registrado');
-          } else {
-            throw error;
+      if (existingPlayer && existingPlayer.length > 0) {
+        alert('❌ Este email ya está registrado');
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('players')
+        .insert([
+          {
+            team_id: currentUser.id,
+            name: newPlayer.name,
+            email: newPlayer.email,
+            password: newPlayer.password,
+            number: newPlayer.number ? parseInt(newPlayer.number) : null,
+            position: newPlayer.position || null
           }
-          return;
-        }
+        ])
+        .select()
+        .single();
 
-        alert('✅ Jugador agregado exitosamente');
-        setPlayers([data, ...players]);
-        setNewPlayer({ name: '', email: '', password: '', position: '', number: '' });
-        setShowAddPlayer(false);
-      } catch (err) {
-        console.error('Error al agregar jugador:', err);
-        alert('Error al agregar el jugador: ' + err.message);
-      }
-    };
+      if (error) throw error;
 
-    const deletePlayer = async (playerId, playerName) => {
-      if (!confirm(`¿Seguro que quieres eliminar a ${playerName}?`)) return;
+      setPlayers([data, ...players]);
+      setNewPlayer({ name: '', email: '', password: '', number: '', position: '' });
+      setShowAddPlayer(false);
+      alert('✅ Jugador añadido correctamente');
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
+  };
 
-      try {
-        const { error } = await supabase
-          .from('players')
-          .delete()
-          .eq('id', playerId);
+  const deletePlayer = async (playerId, playerName) => {
+    const confirmDelete = window.confirm(
+      `¿Estás seguro de eliminar a ${playerName}?\n\n` +
+      `⚠️ ADVERTENCIA: Se eliminarán también todos sus registros de bienestar.`
+    );
 
-        if (error) throw error;
+    if (!confirmDelete) return;
 
-        setPlayers(players.filter(p => p.id !== playerId));
-        alert('✅ Jugador eliminado');
-      } catch (err) {
-        console.error('Error al eliminar jugador:', err);
-        alert('Error al eliminar el jugador');
-      }
-    };
+    try {
+      const { error } = await supabase
+        .from('players')
+        .delete()
+        .eq('id', playerId);
 
-    const getColorForValue = (value) => {
-      if (value <= 3) return 'text-red-600 bg-red-100';
-      if (value <= 7) return 'text-yellow-600 bg-yellow-100';
-      return 'text-green-600 bg-green-100';
-    };
+      if (error) throw error;
 
-    const getMuscleGroupLabel = (group) => {
-      const labels = {
-        'legs': 'Piernas',
-        'arms': 'Brazos',
-        'back': 'Espalda',
-        'shoulders': 'Hombros',
-        'neck': 'Cuello',
-        'core': 'Core/Abdomen',
-        'general': 'General'
-      };
-      return labels[group] || group;
-    };
+      setPlayers(players.filter(p => p.id !== playerId));
+      setWellnessLogs(wellnessLogs.filter(log => log.player_id !== playerId));
 
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="bg-white shadow">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center py-6">
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900">
-                  ⚽ {currentUser?.team_name}
-                </h1>
-                <p className="text-sm text-gray-600 mt-1">
-                  Entrenador: {currentUser?.coach_name} • {players.length} jugadores
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  if (confirm('¿Cerrar sesión?')) {
-                    setCurrentUser(null);
-                    setView('login');
-                  }
-                }}
-                className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition"
-              >
-                Cerrar Sesión
-              </button>
-            </div>
-          </div>
-        </div>
+      alert(`✅ ${playerName} ha sido eliminado correctamente`);
+    } catch (err) {
+      alert('❌ Error al eliminar jugador: ' + err.message);
+    }
+  };
 
-        <div className="bg-white border-b">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex space-x-8">
-              <button
-                onClick={() => setActiveTab('overview')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'overview'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                📊 Resumen
-              </button>
-              <button
-                onClick={() => setActiveTab('players')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'players'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                👥 Jugadores ({players.length})
-              </button>
-              <button
-                onClick={() => setActiveTab('wellness')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'wellness'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                💚 Bienestar ({wellnessLogs.length})
-              </button>
-              <button
-                onClick={() => setActiveTab('settings')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'settings'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                ⚙️ Configuración
-              </button>
-            </div>
-          </div>
-        </div>
+  const logout = () => {
+    setCurrentUser(null);
+    setView('login');
+  };
 
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          
-          {activeTab === 'overview' && (
+  const getValueColor = (value) => {
+    if (value >= 8) return 'text-green-600 font-bold';
+    if (value >= 5) return 'text-yellow-600 font-bold';
+    return 'text-red-600 font-bold';
+  };
+
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('es-ES', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+  };
+
+  const formatTime = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleTimeString('es-ES', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+  };
+
+  const filteredLogs = selectedPlayer === 'all'
+    ? wellnessLogs
+    : wellnessLogs.filter(log => log.player_id === selectedPlayer);
+
+  return (
+    <div className="min-h-screen p-4 md:p-8">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="bg-white rounded-lg shadow-lg p-4 md:p-6 mb-6">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                <div className="bg-white rounded-lg shadow p-6">
-                  <div className="flex items-center">
-                    <div className="flex-shrink-0 bg-blue-100 rounded-md p-3">
-                      <span className="text-2xl">👥</span>
-                    </div>
-                    <div className="ml-5 w-0 flex-1">
-                      <dl>
-                        <dt className="text-sm font-medium text-gray-500 truncate">
-                          Total Jugadores
-                        </dt>
-                        <dd className="text-3xl font-bold text-gray-900">
-                          {players.length}
-                        </dd>
-                      </dl>
-                    </div>
-                  </div>
+              <div className="flex items-center space-x-3 mb-2">
+                <div className="text-4xl">⚽</div>
+                <div>
+                  <h1 className="text-2xl md:text-3xl font-bold text-gray-800">{currentUser.name}</h1>
+                  <p className="text-gray-600">Entrenador: {currentUser.coach_name} • {players.length} jugadores</p>
                 </div>
+              </div>
+            </div>
+            <button
+              onClick={logout}
+              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors w-full md:w-auto"
+            >
+              Cerrar Sesión
+            </button>
+          </div>
+        </div>
 
-                <div className="bg-white rounded-lg shadow p-6">
-                  <div className="flex items-center">
-                    <div className="flex-shrink-0 bg-green-100 rounded-md p-3">
-                      <span className="text-2xl">💚</span>
-                    </div>
-                    <div className="ml-5 w-0 flex-1">
-                      <dl>
-                        <dt className="text-sm font-medium text-gray-500 truncate">
-                          Registros de Bienestar
-                        </dt>
-                        <dd className="text-3xl font-bold text-gray-900">
-                          {wellnessLogs.length}
-                        </dd>
-                      </dl>
-                    </div>
-                  </div>
+        {/* Tabs */}
+        <div className="bg-white rounded-lg shadow-lg mb-6 overflow-x-auto">
+          <div className="flex border-b min-w-max md:min-w-0">
+            {[
+              { id: 'overview', icon: '📊', label: 'Resumen' },
+              { id: 'players', icon: '👥', label: 'Jugadores', count: players.length },
+              { id: 'wellness', icon: '💚', label: 'Bienestar', count: wellnessLogs.length },
+              { id: 'settings', icon: '⚙️', label: 'Configuración' }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex-1 px-4 md:px-6 py-4 font-medium transition-colors whitespace-nowrap ${
+                  activeTab === tab.id
+                    ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
+                    : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                }`}
+              >
+                {tab.icon} {tab.label} {tab.count !== undefined && `(${tab.count})`}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Contenido de las pestañas */}
+        <div className="bg-white rounded-lg shadow-lg p-4 md:p-6">
+          {/* RESUMEN */}
+          {activeTab === 'overview' && (
+            <div className="space-y-6">
+              <h3 className="text-xl font-semibold mb-4">📊 Resumen General</h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-blue-50 p-6 rounded-lg border border-blue-200">
+                  <div className="text-3xl mb-2">👥</div>
+                  <div className="text-3xl font-bold text-blue-600">{players.length}</div>
+                  <div className="text-gray-600">Jugadores</div>
                 </div>
-
-                <div className="bg-white rounded-lg shadow p-6">
-                  <div className="flex items-center">
-                    <div className="flex-shrink-0 bg-purple-100 rounded-md p-3">
-                      <span className="text-2xl">🔑</span>
-                    </div>
-                    <div className="ml-5 w-0 flex-1">
-                      <dl>
-                        <dt className="text-sm font-medium text-gray-500 truncate">
-                          Licencia Activa
-                        </dt>
-                        <dd className="text-xs font-mono text-gray-900 mt-1">
-                          {currentUser?.license}
-                        </dd>
-                      </dl>
-                    </div>
+                
+                <div className="bg-green-50 p-6 rounded-lg border border-green-200">
+                  <div className="text-3xl mb-2">📝</div>
+                  <div className="text-3xl font-bold text-green-600">{wellnessLogs.length}</div>
+                  <div className="text-gray-600">Registros</div>
+                </div>
+                
+                <div className="bg-purple-50 p-6 rounded-lg border border-purple-200">
+                  <div className="text-3xl mb-2">📅</div>
+                  <div className="text-3xl font-bold text-purple-600">
+                    {wellnessLogs.filter(log => {
+                      const today = new Date();
+                      const logDate = new Date(log.created_at);
+                      return logDate.toDateString() === today.toDateString();
+                    }).length}
                   </div>
+                  <div className="text-gray-600">Hoy</div>
                 </div>
               </div>
 
-              <div className="bg-white rounded-lg shadow p-6 mb-6">
-                <h2 className="text-xl font-bold text-gray-900 mb-4">
-                  ¡Bienvenido, {currentUser?.coach_name}! 👋
-                </h2>
-                <p className="text-gray-600 mb-4">
-                  Gestiona tu equipo, agrega jugadores y monitorea su bienestar desde este panel.
-                </p>
-                <div className="flex gap-4">
-                  <button
-                    onClick={() => setActiveTab('players')}
-                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-                  >
-                    Ver Jugadores
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('wellness')}
-                    className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
-                  >
-                    Ver Bienestar
-                  </button>
-                  <button
-                    onClick={() => {
-                      setActiveTab('players');
-                      setTimeout(() => setShowAddPlayer(true), 100);
-                    }}
-                    className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700"
-                  >
-                    + Agregar Jugador
-                  </button>
+              {wellnessLogs.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  <div className="text-6xl mb-4">📊</div>
+                  <p className="text-lg">No hay registros todavía</p>
+                  <p className="text-sm mt-2">Los jugadores deben iniciar sesión y completar su formulario de bienestar</p>
                 </div>
-              </div>
-
-              {players.length > 0 && (
-                <div className="bg-white rounded-lg shadow p-6">
-                  <h3 className="text-lg font-bold text-gray-900 mb-4">
-                    Últimos Jugadores Registrados
-                  </h3>
+              ) : (
+                <div className="mt-6">
+                  <h4 className="font-semibold mb-3">Últimos Registros</h4>
                   <div className="space-y-3">
-                    {players.slice(0, 5).map(player => (
-                      <div key={player.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <div className="flex items-center">
-                          <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold">
-                            {player.number || '?'}
+                    {wellnessLogs.slice(0, 5).map((log) => (
+                      <div key={log.id} className="border rounded-lg p-4 hover:bg-gray-50">
+                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                          <div className="flex items-center space-x-3">
+                            <span className="text-2xl font-bold text-blue-600">#{log.players?.number || '-'}</span>
+                            <div>
+                              <div className="font-medium">{log.players?.name}</div>
+                              <div className="text-sm text-gray-500">{log.players?.position}</div>
+                            </div>
                           </div>
-                          <div className="ml-3">
-                            <p className="font-medium text-gray-900">{player.name}</p>
-                            <p className="text-sm text-gray-500">{player.position || 'Sin posición'}</p>
+                          <div className="text-sm text-gray-600">
+                            {formatDate(log.created_at)} • {formatTime(log.created_at)}
                           </div>
                         </div>
-                        <span className="text-xs text-gray-500">
-                          {new Date(player.created_at).toLocaleDateString('es-ES')}
-                        </span>
                       </div>
                     ))}
                   </div>
@@ -712,284 +599,239 @@ function App() {
             </div>
           )}
 
+          {/* JUGADORES - RESPONSIVE */}
           {activeTab === 'players' && (
-            <div>
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-900">
-                  Gestión de Jugadores
-                </h2>
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+                <h3 className="text-xl font-semibold">👥 Gestión de Jugadores</h3>
                 <button
-                  onClick={() => setShowAddPlayer(true)}
-                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center"
+                  onClick={() => setShowAddPlayer(!showAddPlayer)}
+                  className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
                 >
-                  <span className="mr-2">+</span> Agregar Jugador
+                  {showAddPlayer ? '❌ Cancelar' : '➕ Añadir Jugador'}
                 </button>
               </div>
 
               {showAddPlayer && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                  <div className="bg-white rounded-lg p-8 max-w-md w-full">
-                    <h3 className="text-xl font-bold mb-4">Agregar Nuevo Jugador</h3>
+                <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
+                  <h4 className="font-semibold mb-4">Nuevo Jugador</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <input
                       type="text"
                       placeholder="Nombre completo *"
                       value={newPlayer.name}
-                      onChange={(e) => setNewPlayer({ ...newPlayer, name: e.target.value })}
-                      className="w-full px-4 py-3 border rounded-lg mb-3"
+                      onChange={(e) => setNewPlayer({...newPlayer, name: e.target.value})}
+                      className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
                     <input
                       type="email"
                       placeholder="Email *"
                       value={newPlayer.email}
-                      onChange={(e) => setNewPlayer({ ...newPlayer, email: e.target.value })}
-                      className="w-full px-4 py-3 border rounded-lg mb-3"
+                      onChange={(e) => setNewPlayer({...newPlayer, email: e.target.value})}
+                      className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
                     <input
                       type="password"
                       placeholder="Contraseña *"
                       value={newPlayer.password}
-                      onChange={(e) => setNewPlayer({ ...newPlayer, password: e.target.value })}
-                      className="w-full px-4 py-3 border rounded-lg mb-3"
-                    />
-                    <input
-                      type="text"
-                      placeholder="Posición (ej: Delantero)"
-                      value={newPlayer.position}
-                      onChange={(e) => setNewPlayer({ ...newPlayer, position: e.target.value })}
-                      className="w-full px-4 py-3 border rounded-lg mb-3"
+                      onChange={(e) => setNewPlayer({...newPlayer, password: e.target.value})}
+                      className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
                     <input
                       type="number"
-                      placeholder="Número de camiseta"
+                      placeholder="Número (dorsal)"
                       value={newPlayer.number}
-                      onChange={(e) => setNewPlayer({ ...newPlayer, number: e.target.value })}
-                      className="w-full px-4 py-3 border rounded-lg mb-4"
+                      onChange={(e) => setNewPlayer({...newPlayer, number: e.target.value})}
+                      className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
-                    <div className="flex gap-3">
-                      <button
-                        onClick={addPlayer}
-                        className="flex-1 bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700"
-                      >
-                        Agregar
-                      </button>
-                      <button
-                        onClick={() => {
-                          setShowAddPlayer(false);
-                          setNewPlayer({ name: '', email: '', password: '', position: '', number: '' });
-                        }}
-                        className="flex-1 bg-gray-300 text-gray-700 py-3 rounded-lg hover:bg-gray-400"
-                      >
-                        Cancelar
-                      </button>
-                    </div>
+                    <input
+                      type="text"
+                      placeholder="Posición"
+                      value={newPlayer.position}
+                      onChange={(e) => setNewPlayer({...newPlayer, position: e.target.value})}
+                      className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 col-span-1 md:col-span-2"
+                    />
                   </div>
+                  <button
+                    onClick={addPlayer}
+                    className="mt-4 w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+                  >
+                    ✅ Guardar Jugador
+                  </button>
                 </div>
               )}
 
-              {loadingPlayers ? (
-                <div className="text-center py-12">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-                  <p className="text-gray-600 mt-4">Cargando jugadores...</p>
-                </div>
-              ) : players.length === 0 ? (
-                <div className="bg-white rounded-lg shadow p-12 text-center">
-                  <div className="text-6xl mb-4">🏃</div>
-                  <h3 className="text-xl font-bold text-gray-900 mb-2">
-                    No hay jugadores todavía
-                  </h3>
-                  <p className="text-gray-600 mb-6">
-                    Comienza agregando tu primer jugador al equipo
-                  </p>
-                  <button
-                    onClick={() => setShowAddPlayer(true)}
-                    className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700"
-                  >
-                    + Agregar Primer Jugador
-                  </button>
+              {players.length === 0 ? (
+                <div className="bg-gray-50 p-8 rounded-lg text-center text-gray-500">
+                  No hay jugadores registrados. Añade el primero.
                 </div>
               ) : (
-                <div className="bg-white rounded-lg shadow overflow-hidden">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          #
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Jugador
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Posición
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Email
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Fecha Alta
-                        </th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Acciones
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {players.map((player) => (
-                        <tr key={player.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold">
-                              {player.number || '?'}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm font-medium text-gray-900">{player.name}</div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-500">{player.position || '-'}</div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-500">{player.email}</div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-500">
-                              {new Date(player.created_at).toLocaleDateString('es-ES')}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                            <button
-                              onClick={() => deletePlayer(player.id, player.name)}
-                              className="text-red-600 hover:text-red-900"
-                            >
-                              Eliminar
-                            </button>
-                          </td>
+                <>
+                  {/* VISTA DESKTOP - Tabla */}
+                  <div className="hidden md:block bg-white rounded-lg shadow overflow-hidden">
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nº</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nombre</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Posición</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Acciones</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {players.map((player) => (
+                          <tr key={player.id} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className="text-lg font-bold text-blue-600">#{player.number || '-'}</span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap font-medium">{player.name}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-gray-600">{player.position || '-'}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-gray-600">{player.email}</td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <button
+                                onClick={() => deletePlayer(player.id, player.name)}
+                                className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm font-medium transition-colors"
+                              >
+                                🗑️ Eliminar
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* VISTA MÓVIL - Tarjetas */}
+                  <div className="md:hidden space-y-4">
+                    {players.map((player) => (
+                      <div key={player.id} className="bg-white rounded-lg shadow-md p-4 border border-gray-200">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center space-x-3">
+                            <span className="text-2xl font-bold text-blue-600">#{player.number || '-'}</span>
+                            <div>
+                              <div className="font-semibold text-lg">{player.name}</div>
+                              <div className="text-sm text-gray-500">{player.position || 'Sin posición'}</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mb-3 text-sm text-gray-600">
+                          📧 {player.email}
+                        </div>
+
+                        <button
+                          onClick={() => deletePlayer(player.id, player.name)}
+                          className="w-full px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 font-medium transition-colors"
+                        >
+                          🗑️ Eliminar Jugador
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </>
               )}
             </div>
           )}
 
+          {/* BIENESTAR */}
           {activeTab === 'wellness' && (
-            <div>
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-900">
-                  Registros de Bienestar del Equipo
-                </h2>
-                <div className="flex gap-2">
-                  <select
-                    value={selectedPlayer || ''}
-                    onChange={(e) => setSelectedPlayer(e.target.value || null)}
-                    className="px-4 py-2 border border-gray-300 rounded-lg"
-                  >
-                    <option value="">Todos los jugadores</option>
-                    {players.map(player => (
-                      <option key={player.id} value={player.id}>{player.name}</option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={loadWellnessLogs}
-                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-                  >
-                    🔄 Actualizar
-                  </button>
-                </div>
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+                <h3 className="text-xl font-semibold">💚 Registros de Bienestar ({filteredLogs.length})</h3>
+                <button
+                  onClick={loadWellnessLogs}
+                  className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                >
+                  🔄 Actualizar
+                </button>
               </div>
 
-              {loadingWellness ? (
-                <div className="text-center py-12">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-                  <p className="text-gray-600 mt-4">Cargando registros...</p>
+              {players.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium mb-2">Filtrar por jugador:</label>
+                  <select
+                    value={selectedPlayer}
+                    onChange={(e) => setSelectedPlayer(e.target.value)}
+                    className="w-full md:w-auto px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="all">Todos los jugadores</option>
+                    {players.map(player => (
+                      <option key={player.id} value={player.id}>
+                        #{player.number || '-'} {player.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              ) : wellnessLogs.length === 0 ? (
-                <div className="bg-white rounded-lg shadow p-12 text-center">
-                  <div className="text-6xl mb-4">📊</div>
-                  <h3 className="text-xl font-bold text-gray-900 mb-2">
-                    No hay registros todavía
-                  </h3>
-                  <p className="text-gray-600">
-                    Los jugadores aún no han completado ningún registro de bienestar
-                  </p>
+              )}
+
+              {filteredLogs.length === 0 ? (
+                <div className="bg-gray-50 p-12 rounded-lg text-center text-gray-500">
+                  <div className="text-6xl mb-4">💚</div>
+                  <p className="text-lg">No hay registros de bienestar</p>
+                  <p className="text-sm mt-2">Los jugadores deben iniciar sesión y completar su formulario</p>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {wellnessLogs
-                    .filter(log => !selectedPlayer || log.player_id === selectedPlayer)
-                    .map((log) => (
-                    <div key={log.id} className="bg-white rounded-lg shadow p-6">
-                      <div className="flex justify-between items-start mb-4">
-                        <div className="flex items-center">
-                          <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold">
-                            {log.players?.number || '?'}
+                  {filteredLogs.map((log) => (
+                    <div key={log.id} className="border rounded-lg p-4 hover:bg-gray-50">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center space-x-3">
+                          <span className="text-2xl font-bold text-blue-600">#{log.players?.number || '-'}</span>
+                          <div>
+                            <div className="font-semibold text-lg">{log.players?.name}</div>
+                            <div className="text-sm text-gray-500">{log.players?.position}</div>
                           </div>
-                          <div className="ml-3">
-                            <p className="font-bold text-gray-900">{log.players?.name}</p>
-                            <p className="text-sm text-gray-500">{log.players?.position || 'Sin posición'}</p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm font-medium text-gray-900">
-                            {new Date(log.created_at).toLocaleDateString('es-ES', {
-                              weekday: 'long',
-                              year: 'numeric',
-                              month: 'long',
-                              day: 'numeric'
-                            })}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {new Date(log.created_at).toLocaleTimeString('es-ES', {
-                              hour: '2-digit',
-                              minute: '2-digit'
-                            })}
-                          </p>
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-5 gap-3 mb-4">
+                      <div className="text-sm text-gray-600 mb-3">
+                        <div>{formatDate(log.created_at)}</div>
+                        <div className="font-mono">{formatTime(log.created_at)}</div>
+                      </div>
+
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-3">
                         <div className="text-center">
-                          <div className="text-xs text-gray-500 mb-1">Sueño</div>
-                          <div className={`text-xl font-bold px-3 py-2 rounded ${getColorForValue(log.sleep_quality)}`}>
+                          <div className="text-xs text-gray-500 mb-1">😴 Sueño</div>
+                          <div className={`text-2xl font-bold ${getValueColor(log.sleep_quality)}`}>
                             {log.sleep_quality}
                           </div>
                         </div>
                         <div className="text-center">
-                          <div className="text-xs text-gray-500 mb-1">Dolor</div>
-                          <div className={`text-xl font-bold px-3 py-2 rounded ${getColorForValue(11 - log.muscle_soreness)}`}>
+                          <div className="text-xs text-gray-500 mb-1">💪 Dolor</div>
+                          <div className={`text-2xl font-bold ${getValueColor(11 - log.muscle_soreness)}`}>
                             {log.muscle_soreness}
                           </div>
                         </div>
                         <div className="text-center">
-                          <div className="text-xs text-gray-500 mb-1">Estrés</div>
-                          <div className={`text-xl font-bold px-3 py-2 rounded ${getColorForValue(11 - log.stress_level)}`}>
+                          <div className="text-xs text-gray-500 mb-1">😰 Estrés</div>
+                          <div className={`text-2xl font-bold ${getValueColor(11 - log.stress_level)}`}>
                             {log.stress_level}
                           </div>
                         </div>
                         <div className="text-center">
-                          <div className="text-xs text-gray-500 mb-1">Energía</div>
-                          <div className={`text-xl font-bold px-3 py-2 rounded ${getColorForValue(log.energy_level)}`}>
+                          <div className="text-xs text-gray-500 mb-1">⚡ Energía</div>
+                          <div className={`text-2xl font-bold ${getValueColor(log.energy_level)}`}>
                             {log.energy_level}
                           </div>
                         </div>
                         <div className="text-center">
-                          <div className="text-xs text-gray-500 mb-1">Ánimo</div>
-                          <div className={`text-xl font-bold px-3 py-2 rounded ${getColorForValue(log.mood)}`}>
+                          <div className="text-xs text-gray-500 mb-1">😊 Ánimo</div>
+                          <div className={`text-2xl font-bold ${getValueColor(log.mood)}`}>
                             {log.mood}
                           </div>
                         </div>
                       </div>
 
                       {log.muscle_group && (
-                        <div className="mb-3">
-                          <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-orange-100 text-orange-800">
-                            💪 Dolor en: {getMuscleGroupLabel(log.muscle_group)}
-                          </span>
+                        <div className="bg-yellow-50 border border-yellow-200 rounded p-2 mb-2">
+                          <span className="text-sm font-medium">💪 Dolor en: {log.muscle_group}</span>
                         </div>
                       )}
 
                       {log.notes && (
-                        <div className="pt-3 border-t">
-                          <p className="text-sm text-gray-600 italic">"{log.notes}"</p>
+                        <div className="bg-blue-50 border border-blue-200 rounded p-3 text-sm">
+                          <span className="font-medium">Notas:</span> "{log.notes}"
                         </div>
                       )}
                     </div>
@@ -999,498 +841,388 @@ function App() {
             </div>
           )}
 
+          {/* CONFIGURACIÓN */}
           {activeTab === 'settings' && (
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-2xl font-bold text-gray-900 mb-6">
-                Configuración de la Cuenta
-              </h2>
-              
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Nombre del Equipo
-                  </label>
-                  <input
-                    type="text"
-                    value={currentUser?.team_name}
-                    disabled
-                    className="w-full px-4 py-3 border rounded-lg bg-gray-50"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Entrenador
-                  </label>
-                  <input
-                    type="text"
-                    value={currentUser?.coach_name}
-                    disabled
-                    className="w-full px-4 py-3 border rounded-lg bg-gray-50"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Email
-                  </label>
-                  <input
-                    type="email"
-                    value={currentUser?.coach_email}
-                    disabled
-                    className="w-full px-4 py-3 border rounded-lg bg-gray-50"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Licencia
-                  </label>
-                  <input
-                    type="text"
-                    value={currentUser?.license}
-                    disabled
-                    className="w-full px-4 py-3 border rounded-lg bg-gray-50 font-mono text-sm"
-                  />
-                </div>
-
-                <div className="pt-6 border-t">
-                  <button
-                    onClick={() => {
-                      if (confirm('¿Cerrar sesión?')) {
-                        setCurrentUser(null);
-                        setView('login');
-                      }
-                    }}
-                    className="bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700"
-                  >
-                    Cerrar Sesión
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  const PlayerForm = () => {
-    const [wellnessData, setWellnessData] = useState({
-      sleep_quality: 5,
-      muscle_soreness: 5,
-      stress_level: 5,
-      energy_level: 5,
-      mood: 5,
-      muscle_group: '',
-      notes: ''
-    });
-    const [history, setHistory] = useState([]);
-    const [loadingHistory, setLoadingHistory] = useState(false);
-    const [submitting, setSubmitting] = useState(false);
-    const [justSubmitted, setJustSubmitted] = useState(false);
-
-    useEffect(() => {
-      if (currentUser?.playerId) {
-        loadHistory();
-      }
-    }, [currentUser]);
-
-    const loadHistory = async () => {
-      setLoadingHistory(true);
-      try {
-        const { data, error } = await supabase
-          .from('wellness_logs')
-          .select('*')
-          .eq('player_id', currentUser.playerId)
-          .order('created_at', { ascending: false })
-          .limit(10);
-
-        if (error) throw error;
-        setHistory(data || []);
-      } catch (err) {
-        console.error('Error al cargar historial:', err);
-      } finally {
-        setLoadingHistory(false);
-      }
-    };
-
-    const submitWellness = async () => {
-      setSubmitting(true);
-      setJustSubmitted(false);
-      
-      try {
-        const now = new Date();
-        
-        const { data, error } = await supabase
-          .from('wellness_logs')
-          .insert([
-            {
-              player_id: currentUser.playerId,
-              team_id: currentUser.teamId,
-              sleep_quality: wellnessData.sleep_quality,
-              muscle_soreness: wellnessData.muscle_soreness,
-              stress_level: wellnessData.stress_level,
-              energy_level: wellnessData.energy_level,
-              mood: wellnessData.mood,
-              muscle_group: wellnessData.muscle_group || null,
-              notes: wellnessData.notes || null,
-              created_at: now.toISOString()
-            }
-          ])
-          .select()
-          .single();
-
-        if (error) throw error;
-
-        setJustSubmitted(true);
-        setHistory([data, ...history]);
-        
-        setWellnessData({
-          sleep_quality: 5,
-          muscle_soreness: 5,
-          stress_level: 5,
-          energy_level: 5,
-          mood: 5,
-          muscle_group: '',
-          notes: ''
-        });
-
-        setTimeout(() => setJustSubmitted(false), 3000);
-      } catch (err) {
-        console.error('Error al enviar datos:', err);
-        alert('Error al enviar los datos: ' + err.message);
-      } finally {
-        setSubmitting(false);
-      }
-    };
-
-    const getColorForValue = (value) => {
-      if (value <= 3) return 'text-red-600 bg-red-100';
-      if (value <= 7) return 'text-yellow-600 bg-yellow-100';
-      return 'text-green-600 bg-green-100';
-    };
-
-    const getMuscleGroupLabel = (group) => {
-      const labels = {
-        'legs': 'Piernas',
-        'arms': 'Brazos',
-        'back': 'Espalda',
-        'shoulders': 'Hombros',
-        'neck': 'Cuello',
-        'core': 'Core/Abdomen',
-        'general': 'General'
-      };
-      return labels[group] || group;
-    };
-
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="bg-white shadow">
-          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center py-6">
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">
-                  🏃 Panel del Jugador
-                </h1>
-                <p className="text-sm text-gray-600 mt-1">
-                  {currentUser?.name}
-                  {currentUser?.number && ` • #${currentUser.number}`}
-                  {currentUser?.position && ` • ${currentUser.position}`}
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  if (confirm('¿Cerrar sesión?')) {
-                    setCurrentUser(null);
-                    setView('login');
-                  }
-                }}
-                className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
-              >
-                Cerrar Sesión
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          
-          {justSubmitted && (
-            <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg animate-pulse">
-              <p className="text-green-800 font-semibold text-center">
-                ✅ ¡Registro enviado exitosamente a las {new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}!
-              </p>
-            </div>
-          )}
-          
-          <div className="bg-white rounded-lg shadow p-6 mb-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-6">
-              📊 Registro Diario de Bienestar
-            </h2>
-            
             <div className="space-y-6">
-              <div>
-                <div className="flex justify-between items-center mb-2">
-                  <label className="text-sm font-medium text-gray-700">
-                    😴 Calidad del Sueño
-                  </label>
-                  <span className={`text-2xl font-bold px-3 py-1 rounded ${getColorForValue(wellnessData.sleep_quality)}`}>
-                    {wellnessData.sleep_quality}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="1"
-                  max="10"
-                  value={wellnessData.sleep_quality}
-                  onChange={(e) => setWellnessData({ ...wellnessData, sleep_quality: parseInt(e.target.value) })}
-                  className="w-full"
-                />
-                <div className="flex justify-between text-xs text-gray-500 mt-1">
-                  <span>Muy malo</span>
-                  <span>Excelente</span>
-                </div>
-              </div>
-
-              <div>
-                <div className="flex justify-between items-center mb-2">
-                  <label className="text-sm font-medium text-gray-700">
-                    💪 Dolor Muscular
-                  </label>
-                  <span className={`text-2xl font-bold px-3 py-1 rounded ${getColorForValue(11 - wellnessData.muscle_soreness)}`}>
-                    {wellnessData.muscle_soreness}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="1"
-                  max="10"
-                  value={wellnessData.muscle_soreness}
-                  onChange={(e) => setWellnessData({ ...wellnessData, muscle_soreness: parseInt(e.target.value) })}
-                  className="w-full"
-                />
-                <div className="flex justify-between text-xs text-gray-500 mt-1">
-                  <span>Sin dolor</span>
-                  <span>Dolor severo</span>
+              <h3 className="text-xl font-semibold mb-4">⚙️ Configuración</h3>
+              
+              <div className="space-y-4">
+                <div className="border-b pb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nombre del Equipo</label>
+                  <div className="text-lg">{currentUser.name}</div>
                 </div>
                 
-                {wellnessData.muscle_soreness > 3 && (
-                  <div className="mt-3">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      ¿Dónde sientes el dolor?
-                    </label>
-                    <select
-                      value={wellnessData.muscle_group}
-                      onChange={(e) => setWellnessData({ ...wellnessData, muscle_group: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                    >
-                      <option value="">Selecciona una zona</option>
-                      <option value="legs">🦵 Piernas</option>
-                      <option value="arms">💪 Brazos</option>
-                      <option value="back">🔙 Espalda</option>
-                      <option value="shoulders">🤸 Hombros</option>
-                      <option value="neck">🗣️ Cuello</option>
-                      <option value="core">⚡ Core/Abdomen</option>
-                      <option value="general">🌐 General</option>
-                    </select>
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <div className="flex justify-between items-center mb-2">
-                  <label className="text-sm font-medium text-gray-700">
-                    😰 Nivel de Estrés
-                  </label>
-                  <span className={`text-2xl font-bold px-3 py-1 rounded ${getColorForValue(11 - wellnessData.stress_level)}`}>
-                    {wellnessData.stress_level}
-                  </span>
+                <div className="border-b pb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Entrenador</label>
+                  <div className="text-lg">{currentUser.coach_name}</div>
                 </div>
-                <input
-                  type="range"
-                  min="1"
-                  max="10"
-                  value={wellnessData.stress_level}
-                  onChange={(e) => setWellnessData({ ...wellnessData, stress_level: parseInt(e.target.value) })}
-                  className="w-full"
-                />
-                <div className="flex justify-between text-xs text-gray-500 mt-1">
-                  <span>Relajado</span>
-                  <span>Muy estresado</span>
+                
+                <div className="border-b pb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                  <div className="text-lg">{currentUser.email}</div>
+                </div>
+                
+                <div className="border-b pb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Licencia</label>
+                  <div className="text-lg font-mono">{currentUser.license}</div>
                 </div>
               </div>
-
-              <div>
-                <div className="flex justify-between items-center mb-2">
-                  <label className="text-sm font-medium text-gray-700">
-                    ⚡ Nivel de Energía
-                  </label>
-                  <span className={`text-2xl font-bold px-3 py-1 rounded ${getColorForValue(wellnessData.energy_level)}`}>
-                    {wellnessData.energy_level}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="1"
-                  max="10"
-                  value={wellnessData.energy_level}
-                  onChange={(e) => setWellnessData({ ...wellnessData, energy_level: parseInt(e.target.value) })}
-                  className="w-full"
-                />
-                <div className="flex justify-between text-xs text-gray-500 mt-1">
-                  <span>Sin energía</span>
-                  <span>Máxima energía</span>
-                </div>
-              </div>
-
-              <div>
-                <div className="flex justify-between items-center mb-2">
-                  <label className="text-sm font-medium text-gray-700">
-                    😊 Estado de Ánimo
-                  </label>
-                  <span className={`text-2xl font-bold px-3 py-1 rounded ${getColorForValue(wellnessData.mood)}`}>
-                    {wellnessData.mood}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="1"
-                  max="10"
-                  value={wellnessData.mood}
-                  onChange={(e) => setWellnessData({ ...wellnessData, mood: parseInt(e.target.value) })}
-                  className="w-full"
-                />
-                <div className="flex justify-between text-xs text-gray-500 mt-1">
-                  <span>Mal humor</span>
-                  <span>Excelente</span>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  📝 Notas Adicionales (Opcional)
-                </label>
-                <textarea
-                  placeholder="¿Algo que quieras comentar?"
-                  value={wellnessData.notes}
-                  onChange={(e) => setWellnessData({ ...wellnessData, notes: e.target.value })}
-                  rows="3"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <button
-                onClick={submitWellness}
-                disabled={submitting}
-                className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition disabled:bg-gray-400"
-              >
-                {submitting ? 'Enviando...' : '✓ Enviar Datos de Bienestar'}
-              </button>
             </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">
-              📈 Mi Historial
-            </h2>
-            
-            {loadingHistory ? (
-              <div className="text-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-                <p className="text-gray-600 mt-4 text-sm">Cargando historial...</p>
-              </div>
-            ) : history.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <p>Aún no has registrado datos de bienestar.</p>
-                <p className="text-sm mt-2">¡Completa el formulario arriba para empezar!</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {history.map((log) => (
-                  <div key={log.id} className="border rounded-lg p-4 hover:bg-gray-50">
-                    <div className="flex justify-between items-start mb-3">
-                      <span className="text-sm font-medium text-gray-900">
-                        {new Date(log.created_at).toLocaleDateString('es-ES', {
-                          weekday: 'long',
-                          year: 'numeric',
-                          month: 'long',
-                          day: 'numeric'
-                        })}
-                      </span>
-                      <span className="text-xs text-gray-500 font-mono">
-                        {new Date(log.created_at).toLocaleTimeString('es-ES', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          second: '2-digit'
-                        })}
-                      </span>
-                    </div>
-                    
-                    <div className="grid grid-cols-5 gap-2 text-center mb-3">
-                      <div>
-                        <div className="text-xs text-gray-500 mb-1">Sueño</div>
-                        <div className={`text-lg font-bold px-2 py-1 rounded ${getColorForValue(log.sleep_quality)}`}>
-                          {log.sleep_quality}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-gray-500 mb-1">Dolor</div>
-                        <div className={`text-lg font-bold px-2 py-1 rounded ${getColorForValue(11 - log.muscle_soreness)}`}>
-                          {log.muscle_soreness}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-gray-500 mb-1">Estrés</div>
-                        <div className={`text-lg font-bold px-2 py-1 rounded ${getColorForValue(11 - log.stress_level)}`}>
-                          {log.stress_level}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-gray-500 mb-1">Energía</div>
-                        <div className={`text-lg font-bold px-2 py-1 rounded ${getColorForValue(log.energy_level)}`}>
-                          {log.energy_level}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-gray-500 mb-1">Ánimo</div>
-                        <div className={`text-lg font-bold px-2 py-1 rounded ${getColorForValue(log.mood)}`}>
-                          {log.mood}
-                        </div>
-                      </div>
-                    </div>
-
-                    {log.muscle_group && (
-                      <div className="mb-2">
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                          💪 {getMuscleGroupLabel(log.muscle_group)}
-                        </span>
-                      </div>
-                    )}
-                    
-                    {log.notes && (
-                      <div className="pt-3 border-t">
-                        <p className="text-sm text-gray-600 italic">"{log.notes}"</p>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          )}
         </div>
       </div>
-    );
+    </div>
+  );
+};
+
+// PANEL DEL JUGADOR
+const PlayerPanel = ({ currentUser, setView }) => {
+  const [formData, setFormData] = useState({
+    sleep_quality: 5,
+    muscle_soreness: 5,
+    stress_level: 5,
+    energy_level: 5,
+    mood: 5,
+    muscle_group: '',
+    notes: ''
+  });
+  const [history, setHistory] = useState([]);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [successTime, setSuccessTime] = useState('');
+
+  useEffect(() => {
+    loadHistory();
+  }, []);
+
+  const loadHistory = async () => {
+    const { data } = await supabase
+      .from('wellness_logs')
+      .select('*')
+      .eq('player_id', currentUser.playerId)
+      .order('created_at', { ascending: false })
+      .limit(10);
+    setHistory(data || []);
+  };
+
+  const submitWellness = async () => {
+    try {
+      const now = new Date();
+      const timeString = now.toLocaleTimeString('es-ES', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+
+      const { data, error } = await supabase
+        .from('wellness_logs')
+        .insert([
+          {
+            player_id: currentUser.playerId,
+            team_id: currentUser.teamId,
+            ...formData,
+            created_at: now.toISOString()
+          }
+        ])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setHistory([data, ...history]);
+      setSuccessTime(timeString);
+      setShowSuccess(true);
+
+      setTimeout(() => setShowSuccess(false), 3000);
+
+      setFormData({
+        sleep_quality: 5,
+        muscle_soreness: 5,
+        stress_level: 5,
+        energy_level: 5,
+        mood: 5,
+        muscle_group: '',
+        notes: ''
+      });
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
+  };
+
+  const logout = () => {
+    setView('login');
+  };
+
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('es-ES', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+  };
+
+  const formatTime = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleTimeString('es-ES', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+  };
+
+  const getValueColor = (value) => {
+    if (value >= 8) return 'text-green-600';
+    if (value >= 5) return 'text-yellow-600';
+    return 'text-red-600';
   };
 
   return (
-    <div>
-      {view === 'license' && <LicenseScreen />}
-      {view === 'login' && <LoginScreen />}
-      {view === 'coach-dashboard' && <CoachDashboard />}
-      {view === 'player-form' && <PlayerForm />}
+    <div className="min-h-screen p-4 md:p-8">
+      <div className="max-w-4xl mx-auto">
+        {/* Header */}
+        <div className="bg-white rounded-lg shadow-lg p-4 md:p-6 mb-6">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div className="flex items-center space-x-3">
+              <div className="text-4xl">⚽</div>
+              <div>
+                <h1 className="text-2xl md:text-3xl font-bold text-gray-800">
+                  #{currentUser.number || '-'} {currentUser.name}
+                </h1>
+                <p className="text-gray-600">{currentUser.position || 'Jugador'}</p>
+              </div>
+            </div>
+            <button
+              onClick={logout}
+              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors w-full md:w-auto"
+            >
+              Cerrar Sesión
+            </button>
+          </div>
+        </div>
+
+        {/* Mensaje de éxito */}
+        {showSuccess && (
+          <div className="mb-6 bg-green-500 text-white p-4 rounded-lg shadow-lg animate-pulse">
+            <div className="text-center">
+              <div className="text-2xl mb-2">✅</div>
+              <div className="font-semibold">¡Registro enviado exitosamente a las {successTime}!</div>
+            </div>
+          </div>
+        )}
+
+        {/* Formulario */}
+        <div className="bg-white rounded-lg shadow-lg p-4 md:p-6 mb-6">
+          <h2 className="text-xl font-semibold mb-6">📝 Registro Diario de Bienestar</h2>
+          
+          <div className="space-y-6">
+            {/* Sueño */}
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                😴 Calidad del Sueño: <span className={`text-2xl font-bold ${getValueColor(formData.sleep_quality)}`}>{formData.sleep_quality}</span>
+              </label>
+              <input
+                type="range"
+                min="1"
+                max="10"
+                value={formData.sleep_quality}
+                onChange={(e) => setFormData({...formData, sleep_quality: parseInt(e.target.value)})}
+                className="w-full"
+              />
+              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <span>Muy mal</span>
+                <span>Excelente</span>
+              </div>
+            </div>
+
+            {/* Dolor Muscular */}
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                💪 Dolor Muscular: <span className={`text-2xl font-bold ${getValueColor(11 - formData.muscle_soreness)}`}>{formData.muscle_soreness}</span>
+              </label>
+              <input
+                type="range"
+                min="1"
+                max="10"
+                value={formData.muscle_soreness}
+                onChange={(e) => setFormData({...formData, muscle_soreness: parseInt(e.target.value)})}
+                className="w-full"
+              />
+              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <span>Sin dolor</span>
+                <span>Dolor severo</span>
+              </div>
+            </div>
+
+            {/* Selector de Grupo Muscular */}
+            {formData.muscle_soreness > 3 && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <label className="block text-sm font-medium mb-2">¿Dónde sientes el dolor?</label>
+                <select
+                  value={formData.muscle_group}
+                  onChange={(e) => setFormData({...formData, muscle_group: e.target.value})}
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Selecciona una zona</option>
+                  <option value="🦵 Piernas">🦵 Piernas</option>
+                  <option value="💪 Brazos">💪 Brazos</option>
+                  <option value="🔙 Espalda">🔙 Espalda</option>
+                  <option value="🤸 Hombros">🤸 Hombros</option>
+                  <option value="🗣️ Cuello">🗣️ Cuello</option>
+                  <option value="⚡ Core/Abdomen">⚡ Core/Abdomen</option>
+                  <option value="🌐 General">🌐 General</option>
+                </select>
+              </div>
+            )}
+
+            {/* Estrés */}
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                😰 Nivel de Estrés: <span className={`text-2xl font-bold ${getValueColor(11 - formData.stress_level)}`}>{formData.stress_level}</span>
+              </label>
+              <input
+                type="range"
+                min="1"
+                max="10"
+                value={formData.stress_level}
+                onChange={(e) => setFormData({...formData, stress_level: parseInt(e.target.value)})}
+                className="w-full"
+              />
+              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <span>Muy relajado</span>
+                <span>Muy estresado</span>
+              </div>
+            </div>
+
+            {/* Energía */}
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                ⚡ Nivel de Energía: <span className={`text-2xl font-bold ${getValueColor(formData.energy_level)}`}>{formData.energy_level}</span>
+              </label>
+              <input
+                type="range"
+                min="1"
+                max="10"
+                value={formData.energy_level}
+                onChange={(e) => setFormData({...formData, energy_level: parseInt(e.target.value)})}
+                className="w-full"
+              />
+              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <span>Sin energía</span>
+                <span>Mucha energía</span>
+              </div>
+            </div>
+
+            {/* Ánimo */}
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                😊 Estado de Ánimo: <span className={`text-2xl font-bold ${getValueColor(formData.mood)}`}>{formData.mood}</span>
+              </label>
+              <input
+                type="range"
+                min="1"
+                max="10"
+                value={formData.mood}
+                onChange={(e) => setFormData({...formData, mood: parseInt(e.target.value)})}
+                className="w-full"
+              />
+              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <span>Muy mal</span>
+                <span>Excelente</span>
+              </div>
+            </div>
+
+            {/* Notas */}
+            <div>
+              <label className="block text-sm font-medium mb-2">📝 Notas (opcional)</label>
+              <textarea
+                value={formData.notes}
+                onChange={(e) => setFormData({...formData, notes: e.target.value})}
+                placeholder="¿Algo más que quieras comentar?"
+                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                rows="3"
+              />
+            </div>
+
+            <button
+              onClick={submitWellness}
+              className="w-full bg-green-500 text-white py-3 rounded-lg hover:bg-green-600 transition-colors font-medium text-lg"
+            >
+              ✅ Enviar Registro
+            </button>
+          </div>
+        </div>
+
+        {/* Historial */}
+        <div className="bg-white rounded-lg shadow-lg p-4 md:p-6">
+          <h2 className="text-xl font-semibold mb-4">📈 Mi Historial</h2>
+          
+          {history.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <div className="text-5xl mb-3">📊</div>
+              <p>No tienes registros todavía</p>
+              <p className="text-sm mt-2">Completa tu primer formulario arriba</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {history.map((log) => (
+                <div key={log.id} className="border rounded-lg p-4 hover:bg-gray-50">
+                  <div className="text-sm text-gray-600 mb-3">
+                    <div className="font-medium">{formatDate(log.created_at)}</div>
+                    <div className="font-mono">{formatTime(log.created_at)}</div>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-3">
+                    <div className="text-center">
+                      <div className="text-xs text-gray-500 mb-1">😴</div>
+                      <div className={`text-2xl font-bold ${getValueColor(log.sleep_quality)}`}>
+                        {log.sleep_quality}
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xs text-gray-500 mb-1">💪</div>
+                      <div className={`text-2xl font-bold ${getValueColor(11 - log.muscle_soreness)}`}>
+                        {log.muscle_soreness}
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xs text-gray-500 mb-1">😰</div>
+                      <div className={`text-2xl font-bold ${getValueColor(11 - log.stress_level)}`}>
+                        {log.stress_level}
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xs text-gray-500 mb-1">⚡</div>
+                      <div className={`text-2xl font-bold ${getValueColor(log.energy_level)}`}>
+                        {log.energy_level}
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xs text-gray-500 mb-1">😊</div>
+                      <div className={`text-2xl font-bold ${getValueColor(log.mood)}`}>
+                        {log.mood}
+                      </div>
+                    </div>
+                  </div>
+
+                  {log.muscle_group && (
+                    <div className="bg-yellow-50 border border-yellow-200 rounded p-2 mb-2 text-sm">
+                      💪 {log.muscle_group}
+                    </div>
+                  )}
+
+                  {log.notes && (
+                    <div className="bg-blue-50 border border-blue-200 rounded p-3 text-sm">
+                      <span className="font-medium">Notas:</span> "{log.notes}"
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
-}
+};
 
 export default App;
