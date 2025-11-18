@@ -6,10 +6,12 @@ const App = () => {
   const [licenseKey, setLicenseKey] = useState('');
   const [licenseValidated, setLicenseValidated] = useState(false);
   const [userRole, setUserRole] = useState(null);
-  const [userName, setUserName] = useState('');
+  const [userEmail, setUserEmail] = useState('');
   const [userPassword, setUserPassword] = useState('');
   const [teamId, setTeamId] = useState(null);
   const [teamName, setTeamName] = useState('');
+  const [coachName, setCoachName] = useState('');
+  const [playerName, setPlayerName] = useState('');
   const [activeTab, setActiveTab] = useState('resumen');
   const [players, setPlayers] = useState([]);
   const [wellnessLogs, setWellnessLogs] = useState([]);
@@ -32,10 +34,9 @@ const App = () => {
     const savedLicense = localStorage.getItem('wellnessHubLicense');
     if (savedLicense) {
       const { data } = await supabase
-        .from('licenses')
+        .from('teams')
         .select('*')
-        .eq('license_key', savedLicense)
-        .eq('is_active', true)
+        .eq('license', savedLicense)
         .single();
 
       if (data) {
@@ -51,16 +52,15 @@ const App = () => {
     setLoading(true);
 
     const { data, error } = await supabase
-      .from('licenses')
+      .from('teams')
       .select('*')
-      .eq('license_key', licenseKey)
-      .eq('is_active', true)
+      .eq('license', licenseKey)
       .single();
 
     if (error || !data) {
       setLoading(false);
       setLicenseValidated(false);
-      setTimeout(() => alert('Licencia inválida o expirada'), 100);
+      setTimeout(() => alert('Licencia inválida o no encontrada'), 100);
       return;
     }
 
@@ -79,42 +79,57 @@ const App = () => {
       return;
     }
 
-    // Buscar usuario
-    const { data: userData, error: userError } = await supabase
-      .from('users')
+    // Intentar login como COACH primero
+    const { data: coachData, error: coachError } = await supabase
+      .from('teams')
       .select('*')
-      .eq('username', userName)
+      .eq('coach_email', userEmail)
+      .eq('coach_password', userPassword)
+      .eq('license', licenseKey)
+      .single();
+
+    if (coachData) {
+      // Login exitoso como COACH
+      setUserRole('coach');
+      setTeamId(coachData.id);
+      setTeamName(coachData.team_name);
+      setCoachName(coachData.coach_name);
+      setLoading(false);
+      loadCoachData(coachData.id);
+      return;
+    }
+
+    // Si no es coach, intentar como JUGADOR
+    const { data: playerData, error: playerError } = await supabase
+      .from('players')
+      .select('*, teams!inner(license)')
+      .eq('email', userEmail)
       .eq('password', userPassword)
       .single();
 
-    if (userError || !userData) {
+    if (playerData && playerData.teams.license === licenseKey) {
+      // Login exitoso como JUGADOR
+      setUserRole('player');
+      setTeamId(playerData.team_id);
+      setPlayerName(playerData.name);
       setLoading(false);
-      setTimeout(() => alert('Usuario o contraseña incorrectos'), 100);
+
+      // Cargar datos del equipo
+      const { data: teamData } = await supabase
+        .from('teams')
+        .select('team_name')
+        .eq('id', playerData.team_id)
+        .single();
+      
+      if (teamData) {
+        setTeamName(teamData.team_name);
+      }
       return;
     }
 
-    // Verificar que el usuario pertenece a un equipo con esta licencia
-    const { data: teamData, error: teamError } = await supabase
-      .from('teams')
-      .select('*')
-      .eq('id', userData.team_id)
-      .eq('license_key', licenseKey)
-      .single();
-
-    if (teamError || !teamData) {
-      setLoading(false);
-      setTimeout(() => alert('El usuario no pertenece a un equipo válido con esta licencia'), 100);
-      return;
-    }
-
-    setUserRole(userData.role);
-    setTeamId(userData.team_id);
-    setTeamName(teamData.team_name);
+    // Si llegamos aquí, el login falló
     setLoading(false);
-
-    if (userData.role === 'coach') {
-      loadCoachData(userData.team_id);
-    }
+    setTimeout(() => alert('Email o contraseña incorrectos'), 100);
   };
 
   const loadCoachData = async (teamId) => {
@@ -123,7 +138,7 @@ const App = () => {
       .from('players')
       .select('*')
       .eq('team_id', teamId)
-      .order('player_name');
+      .order('name');
 
     if (playersData) {
       setPlayers(playersData);
@@ -134,7 +149,7 @@ const App = () => {
       .from('wellness_logs')
       .select(`
         *,
-        players (player_name)
+        players (name)
       `)
       .eq('team_id', teamId)
       .order('created_at', { ascending: false });
@@ -152,8 +167,11 @@ const App = () => {
       .from('players')
       .insert([{
         team_id: teamId,
-        player_name: newPlayerName,
-        position: 'Sin asignar'
+        name: newPlayerName,
+        email: `${newPlayerName.toLowerCase().replace(/\s/g, '')}@temp.com`,
+        password: 'temp123',
+        position: 'Sin asignar',
+        number: null
       }]);
 
     if (!error) {
@@ -166,11 +184,25 @@ const App = () => {
     e.preventDefault();
     setLoading(true);
 
+    // Buscar el ID del jugador actual
+    const { data: playerData } = await supabase
+      .from('players')
+      .select('id')
+      .eq('team_id', teamId)
+      .eq('name', playerName)
+      .single();
+
+    if (!playerData) {
+      setLoading(false);
+      setTimeout(() => alert('Error: No se encontró el jugador'), 100);
+      return;
+    }
+
     const { error } = await supabase
       .from('wellness_logs')
       .insert([{
         team_id: teamId,
-        player_id: teamId, // En este caso el jugador usa su team_id como identificador
+        player_id: playerData.id,
         sleep_quality: sleepQuality,
         muscle_soreness: muscleSoreness,
         stress_level: stressLevel,
@@ -200,7 +232,7 @@ const App = () => {
   const logout = () => {
     setUserRole(null);
     setTeamId(null);
-    setUserName('');
+    setUserEmail('');
     setUserPassword('');
     setPlayers([]);
     setWellnessLogs([]);
@@ -262,13 +294,13 @@ const App = () => {
           
           <form onSubmit={handleLogin}>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Usuario
+              Email
             </label>
             <input
-              type="text"
-              value={userName}
-              onChange={(e) => setUserName(e.target.value)}
-              placeholder="Nombre de usuario"
+              type="email"
+              value={userEmail}
+              onChange={(e) => setUserEmail(e.target.value)}
+              placeholder="correo@ejemplo.com"
               className="w-full px-4 py-2 border border-gray-300 rounded-lg mb-4"
               required
             />
@@ -306,7 +338,7 @@ const App = () => {
           <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
             <div>
               <h1 className="text-2xl font-bold text-gray-800">WellnessHub Pro</h1>
-              <p className="text-sm text-gray-600">{teamName}</p>
+              <p className="text-sm text-gray-600">{teamName} - {coachName}</p>
             </div>
             <button
               onClick={logout}
@@ -392,7 +424,7 @@ const App = () => {
                   {wellnessLogs.slice(0, 5).map((log) => (
                     <div key={log.id} className="bg-white border rounded-lg p-4 mb-3">
                       <div className="flex justify-between items-start mb-2">
-                        <span className="font-medium">{log.players?.player_name || 'Jugador'}</span>
+                        <span className="font-medium">{log.players?.name || 'Jugador'}</span>
                         <span className="text-sm text-gray-500">
                           {new Date(log.created_at).toLocaleDateString('es-ES', {
                             day: '2-digit',
@@ -464,8 +496,11 @@ const App = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {players.map((player) => (
                       <div key={player.id} className="bg-white border rounded-lg p-4">
-                        <h3 className="font-semibold text-lg">{player.player_name}</h3>
+                        <h3 className="font-semibold text-lg">{player.name}</h3>
                         <p className="text-sm text-gray-600">{player.position}</p>
+                        {player.number && (
+                          <p className="text-sm text-gray-500">#{player.number}</p>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -479,7 +514,7 @@ const App = () => {
                   {wellnessLogs.map((log) => (
                     <div key={log.id} className="bg-white border rounded-lg p-4 mb-4">
                       <div className="flex justify-between items-start mb-3">
-                        <span className="font-medium text-lg">{log.players?.player_name || 'Jugador'}</span>
+                        <span className="font-medium text-lg">{log.players?.name || 'Jugador'}</span>
                         <span className="text-sm text-gray-500">
                           {new Date(log.created_at).toLocaleDateString('es-ES', {
                             day: '2-digit',
@@ -546,7 +581,8 @@ const App = () => {
                   <h2 className="text-xl font-bold mb-4">Configuración</h2>
                   <div className="bg-blue-50 p-4 rounded-lg">
                     <p className="font-medium">Equipo: {teamName}</p>
-                    <p className="text-sm text-gray-600 mt-2">Licencia: {licenseKey}</p>
+                    <p className="text-sm text-gray-600 mt-2">Entrenador: {coachName}</p>
+                    <p className="text-sm text-gray-600 mt-1">Licencia: {licenseKey}</p>
                   </div>
                 </div>
               )}
@@ -565,7 +601,7 @@ const App = () => {
           <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
             <div>
               <h1 className="text-2xl font-bold text-gray-800">WellnessHub Pro</h1>
-              <p className="text-sm text-gray-600">{teamName}</p>
+              <p className="text-sm text-gray-600">{teamName} - {playerName}</p>
             </div>
             <button
               onClick={logout}
