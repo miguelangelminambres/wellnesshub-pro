@@ -59,7 +59,8 @@ const LicenseScreen = ({ setView, setCurrentUser, setLoading }) => {
         return;
       }
 
-      if (data.status !== 'active') {
+      // CAMBIO IMPORTANTE: Buscar 'available' en lugar de 'active'
+      if (data.status !== 'available') {
         setErrorMsg('❌ Esta licencia ya ha sido utilizada');
         setLoading(false);
         return;
