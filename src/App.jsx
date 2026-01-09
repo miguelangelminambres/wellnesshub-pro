@@ -22,7 +22,9 @@ function App() {
   );
 }
 
+// ============================================
 // PANTALLA DE LICENCIA
+// ============================================
 const LicenseScreen = ({ setView, setCurrentUser, setLoading }) => {
   const [license, setLicense] = useState('');
   const [step, setStep] = useState('input');
@@ -85,7 +87,6 @@ const LicenseScreen = ({ setView, setCurrentUser, setLoading }) => {
         return;
       }
 
-      // Verificar si el email ya existe
       const { data: existingTeam } = await supabase
         .from('teams')
         .select('email')
@@ -97,7 +98,6 @@ const LicenseScreen = ({ setView, setCurrentUser, setLoading }) => {
         return;
       }
 
-      // Crear equipo
       const { data: newTeam, error: teamError } = await supabase
         .from('teams')
         .insert([
@@ -114,7 +114,6 @@ const LicenseScreen = ({ setView, setCurrentUser, setLoading }) => {
 
       if (teamError) throw teamError;
 
-      // Marcar licencia como usada
       await supabase
         .from('licenses')
         .update({
@@ -238,7 +237,9 @@ const LicenseScreen = ({ setView, setCurrentUser, setLoading }) => {
   );
 };
 
+// ============================================
 // PANTALLA DE LOGIN
+// ============================================
 const LoginScreen = ({ setView, setCurrentUser, setLoading }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -253,7 +254,6 @@ const LoginScreen = ({ setView, setCurrentUser, setLoading }) => {
         return;
       }
 
-      // Intentar login como entrenador
       const { data: coaches } = await supabase
         .from('teams')
         .select('*')
@@ -268,7 +268,6 @@ const LoginScreen = ({ setView, setCurrentUser, setLoading }) => {
         return;
       }
 
-      // Intentar login como jugador
       const { data: players } = await supabase
         .from('players')
         .select('*')
@@ -343,7 +342,104 @@ const LoginScreen = ({ setView, setCurrentUser, setLoading }) => {
   );
 };
 
+// ============================================
+// FUNCIONES DE CÁLCULO ACWR
+// ============================================
+const calculateACWR = (playerId, wellnessLogs) => {
+  const playerLogs = wellnessLogs
+    .filter(log => log.player_id === playerId)
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+  if (playerLogs.length < 7) {
+    return { acwr: null, acuteLoad: 0, chronicLoad: 0, status: 'insufficient', message: 'Datos insuficientes (mínimo 7 días)' };
+  }
+
+  const now = new Date();
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const twentyEightDaysAgo = new Date(now.getTime() - 28 * 24 * 60 * 60 * 1000);
+
+  // Calcular carga de cada registro (RPE × duración)
+  const getLoad = (log) => {
+    const rpe = log.rpe || 5;
+    const duration = log.session_duration || 60;
+    return rpe * duration;
+  };
+
+  // Carga aguda (últimos 7 días)
+  const acuteLogs = playerLogs.filter(log => new Date(log.created_at) >= sevenDaysAgo);
+  const acuteLoad = acuteLogs.reduce((sum, log) => sum + getLoad(log), 0);
+
+  // Carga crónica (últimos 28 días, promediado a 7 días)
+  const chronicLogs = playerLogs.filter(log => new Date(log.created_at) >= twentyEightDaysAgo);
+  const totalChronicLoad = chronicLogs.reduce((sum, log) => sum + getLoad(log), 0);
+  const weeksOfData = Math.min(4, Math.ceil(chronicLogs.length / 7) || 1);
+  const chronicLoad = totalChronicLoad / weeksOfData;
+
+  // Calcular ACWR
+  if (chronicLoad === 0) {
+    return { acwr: null, acuteLoad, chronicLoad: 0, status: 'no-chronic', message: 'Sin datos crónicos suficientes' };
+  }
+
+  const acwr = acuteLoad / chronicLoad;
+  const acwrRounded = Math.round(acwr * 100) / 100;
+
+  // Determinar zona de riesgo
+  let status, message, color;
+  if (acwrRounded < 0.8) {
+    status = 'low';
+    message = 'Infraentrenado - Pérdida de forma';
+    color = 'blue';
+  } else if (acwrRounded <= 1.3) {
+    status = 'optimal';
+    message = 'Zona óptima - Bajo riesgo';
+    color = 'green';
+  } else if (acwrRounded <= 1.5) {
+    status = 'warning';
+    message = 'Precaución - Riesgo moderado';
+    color = 'yellow';
+  } else {
+    status = 'danger';
+    message = 'Alto riesgo de lesión';
+    color = 'red';
+  }
+
+  return {
+    acwr: acwrRounded,
+    acuteLoad: Math.round(acuteLoad),
+    chronicLoad: Math.round(chronicLoad),
+    status,
+    message,
+    color,
+    logsCount: {
+      acute: acuteLogs.length,
+      chronic: chronicLogs.length
+    }
+  };
+};
+
+const getACWRColor = (status) => {
+  switch (status) {
+    case 'low': return 'bg-blue-100 border-blue-400 text-blue-800';
+    case 'optimal': return 'bg-green-100 border-green-400 text-green-800';
+    case 'warning': return 'bg-yellow-100 border-yellow-400 text-yellow-800';
+    case 'danger': return 'bg-red-100 border-red-400 text-red-800';
+    default: return 'bg-gray-100 border-gray-400 text-gray-800';
+  }
+};
+
+const getACWRBadgeColor = (status) => {
+  switch (status) {
+    case 'low': return 'bg-blue-500';
+    case 'optimal': return 'bg-green-500';
+    case 'warning': return 'bg-yellow-500';
+    case 'danger': return 'bg-red-500';
+    default: return 'bg-gray-500';
+  }
+};
+
+// ============================================
 // DASHBOARD DEL ENTRENADOR
+// ============================================
 const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [players, setPlayers] = useState([]);
@@ -351,6 +447,7 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
   const [showAddPlayer, setShowAddPlayer] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState('all');
   const [alerts, setAlerts] = useState([]);
+  const [acwrData, setAcwrData] = useState([]);
   const [newPlayer, setNewPlayer] = useState({
     name: '',
     email: '',
@@ -369,6 +466,7 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
   useEffect(() => {
     if (wellnessLogs.length > 0 && players.length > 0) {
       generateAlerts();
+      calculateAllACWR();
     }
   }, [wellnessLogs, players]);
 
@@ -390,27 +488,74 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
     setWellnessLogs(data || []);
   };
 
-  // 🚨 SISTEMA DE ALERTAS INTELIGENTES
+  // Calcular ACWR para todos los jugadores
+  const calculateAllACWR = () => {
+    const acwrResults = players.map(player => {
+      const result = calculateACWR(player.id, wellnessLogs);
+      return {
+        player,
+        ...result
+      };
+    });
+
+    // Ordenar: primero los de mayor riesgo
+    acwrResults.sort((a, b) => {
+      const priority = { danger: 0, warning: 1, low: 2, optimal: 3, insufficient: 4, 'no-chronic': 5 };
+      return (priority[a.status] || 99) - (priority[b.status] || 99);
+    });
+
+    setAcwrData(acwrResults);
+  };
+
+  // 🚨 SISTEMA DE ALERTAS INTELIGENTES (mejorado con ACWR)
   const generateAlerts = () => {
     const newAlerts = [];
-    const today = new Date();
-    const threeDaysAgo = new Date(today.getTime() - 3 * 24 * 60 * 60 * 1000);
 
     players.forEach(player => {
       const playerLogs = wellnessLogs.filter(log => log.player_id === player.id);
       
       if (playerLogs.length === 0) return;
 
-      // Últimos 3 registros del jugador
       const recentLogs = playerLogs.slice(0, 3);
       const latestLog = playerLogs[0];
 
-      // ALERTA 1: Dolor muscular alto persistente
+      // ALERTA ACWR
+      const acwrResult = calculateACWR(player.id, wellnessLogs);
+      if (acwrResult.status === 'danger') {
+        newAlerts.push({
+          type: 'critical',
+          icon: '🔴',
+          player: player.name,
+          number: player.number,
+          message: `ACWR ${acwrResult.acwr} - Alto riesgo de lesión`,
+          detail: `Carga aguda: ${acwrResult.acuteLoad} UA | Carga crónica: ${acwrResult.chronicLoad} UA`
+        });
+      } else if (acwrResult.status === 'warning') {
+        newAlerts.push({
+          type: 'warning',
+          icon: '⚠️',
+          player: player.name,
+          number: player.number,
+          message: `ACWR ${acwrResult.acwr} - Zona de precaución`,
+          detail: 'Considerar reducir la carga de entrenamiento'
+        });
+      } else if (acwrResult.status === 'low') {
+        newAlerts.push({
+          type: 'info',
+          icon: '🔵',
+          player: player.name,
+          number: player.number,
+          message: `ACWR ${acwrResult.acwr} - Infraentrenado`,
+          detail: 'Aumentar progresivamente la carga'
+        });
+      }
+
+      // ALERTA: Dolor muscular alto persistente
       const highPainCount = recentLogs.filter(log => log.muscle_soreness >= 7).length;
       if (highPainCount >= 2) {
         newAlerts.push({
           type: 'critical',
-          icon: '🔴',
+          icon: '💪',
           player: player.name,
           number: player.number,
           message: `Dolor muscular alto (${latestLog.muscle_soreness}/10) - ${highPainCount} registros recientes`,
@@ -418,7 +563,7 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
         });
       }
 
-      // ALERTA 2: Estrés muy alto
+      // ALERTA: Estrés muy alto
       if (latestLog.stress_level >= 8) {
         newAlerts.push({
           type: 'warning',
@@ -430,7 +575,7 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
         });
       }
 
-      // ALERTA 3: Sueño malo
+      // ALERTA: Sueño malo
       if (latestLog.sleep_quality <= 3) {
         newAlerts.push({
           type: 'warning',
@@ -442,7 +587,7 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
         });
       }
 
-      // ALERTA 4: Energía muy baja
+      // ALERTA: Energía muy baja
       if (latestLog.energy_level <= 3) {
         newAlerts.push({
           type: 'info',
@@ -452,23 +597,6 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
           message: `Nivel de energía bajo (${latestLog.energy_level}/10)`,
           detail: 'Monitorear en los próximos entrenamientos'
         });
-      }
-
-      // ALERTA 5: Tendencia negativa (últimos 3 registros empeorando)
-      if (recentLogs.length >= 3) {
-        const avgFirst = (recentLogs[2].sleep_quality + recentLogs[2].energy_level + (11 - recentLogs[2].stress_level)) / 3;
-        const avgLast = (latestLog.sleep_quality + latestLog.energy_level + (11 - latestLog.stress_level)) / 3;
-        
-        if (avgLast < avgFirst - 2) {
-          newAlerts.push({
-            type: 'info',
-            icon: '📉',
-            player: player.name,
-            number: player.number,
-            message: 'Tendencia negativa en el bienestar general',
-            detail: 'Ha empeorado en los últimos registros'
-          });
-        }
       }
     });
 
@@ -488,7 +616,6 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
         return;
       }
 
-      // Verificar si el email ya existe
       const { data: existingPlayer } = await supabase
         .from('players')
         .select('email')
@@ -593,6 +720,21 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
     }
   };
 
+  const getSessionTypeLabel = (type) => {
+    const types = {
+      training: '🏃 Entrenamiento',
+      match: '⚽ Partido',
+      recovery: '🧘 Recuperación',
+      rest: '😴 Descanso',
+      gym: '💪 Gimnasio'
+    };
+    return types[type] || type;
+  };
+
+  // Contar alertas críticas de ACWR
+  const criticalACWRCount = acwrData.filter(d => d.status === 'danger').length;
+  const warningACWRCount = acwrData.filter(d => d.status === 'warning').length;
+
   return (
     <div className="min-h-screen p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
@@ -622,6 +764,7 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
           <div className="flex border-b min-w-max md:min-w-0">
             {[
               { id: 'overview', icon: '📊', label: 'Resumen', count: alerts.length > 0 ? alerts.length : undefined },
+              { id: 'acwr', icon: '📈', label: 'ACWR', count: criticalACWRCount > 0 ? criticalACWRCount : undefined, critical: criticalACWRCount > 0 },
               { id: 'players', icon: '👥', label: 'Jugadores', count: players.length },
               { id: 'wellness', icon: '💚', label: 'Bienestar', count: wellnessLogs.length },
               { id: 'settings', icon: '⚙️', label: 'Configuración' }
@@ -637,11 +780,11 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
               >
                 {tab.icon} {tab.label} 
                 {tab.count !== undefined && (
-                  <span className={`ml-1 ${tab.id === 'overview' && alerts.length > 0 ? 'text-red-600 font-bold' : ''}`}>
+                  <span className={`ml-1 ${tab.critical ? 'text-red-600 font-bold' : ''}`}>
                     ({tab.count})
                   </span>
                 )}
-                {tab.id === 'overview' && alerts.length > 0 && (
+                {tab.critical && (
                   <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
                 )}
               </button>
@@ -675,7 +818,7 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
                   </div>
                   
                   <div className="space-y-3">
-                    {alerts.map((alert, index) => (
+                    {alerts.slice(0, 5).map((alert, index) => (
                       <div key={index} className={`border-2 rounded-lg p-4 ${getAlertColor(alert.type)}`}>
                         <div className="flex items-start space-x-3">
                           <div className="text-3xl">{alert.icon}</div>
@@ -690,6 +833,14 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
                         </div>
                       </div>
                     ))}
+                    {alerts.length > 5 && (
+                      <button
+                        onClick={() => setActiveTab('acwr')}
+                        className="w-full text-center py-2 text-blue-600 hover:text-blue-800 font-medium"
+                      >
+                        Ver todas las alertas ({alerts.length}) →
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
@@ -702,7 +853,7 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
                 </div>
               )}
               
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="bg-blue-50 p-6 rounded-lg border border-blue-200">
                   <div className="text-3xl mb-2">👥</div>
                   <div className="text-3xl font-bold text-blue-600">{players.length}</div>
@@ -726,6 +877,14 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
                   </div>
                   <div className="text-gray-600">Hoy</div>
                 </div>
+
+                <div className={`p-6 rounded-lg border ${criticalACWRCount > 0 ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
+                  <div className="text-3xl mb-2">📈</div>
+                  <div className={`text-3xl font-bold ${criticalACWRCount > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                    {criticalACWRCount}
+                  </div>
+                  <div className="text-gray-600">En riesgo (ACWR)</div>
+                </div>
               </div>
 
               {wellnessLogs.length === 0 ? (
@@ -745,11 +904,13 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
                             <span className="text-2xl font-bold text-blue-600">#{log.players?.number || '-'}</span>
                             <div>
                               <div className="font-medium">{log.players?.name}</div>
-                              <div className="text-sm text-gray-500">{log.players?.position}</div>
+                              <div className="text-sm text-gray-500">
+                                {getSessionTypeLabel(log.session_type)} • {log.session_duration || 60} min • RPE: {log.rpe || 5}
+                              </div>
                             </div>
                           </div>
                           <div className="text-sm text-gray-600">
-                            {formatDate(log.created_at)} • {formatTime(log.created_at)}
+                            {formatDate(log.created_at)}
                           </div>
                         </div>
                       </div>
@@ -760,7 +921,113 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
             </div>
           )}
 
-          {/* JUGADORES - RESPONSIVE */}
+          {/* PANEL ACWR */}
+          {activeTab === 'acwr' && (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+                <h3 className="text-xl font-semibold">📈 Control de Carga (ACWR)</h3>
+                <button
+                  onClick={() => { loadWellnessLogs(); }}
+                  className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                >
+                  🔄 Actualizar
+                </button>
+              </div>
+
+              {/* Leyenda */}
+              <div className="bg-gray-50 p-4 rounded-lg border">
+                <h4 className="font-medium mb-3">Zonas de Riesgo ACWR</h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-4 h-4 rounded bg-blue-500"></div>
+                    <span>&lt; 0.8 Infraentrenado</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <div className="w-4 h-4 rounded bg-green-500"></div>
+                    <span>0.8 - 1.3 Óptimo</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <div className="w-4 h-4 rounded bg-yellow-500"></div>
+                    <span>1.3 - 1.5 Precaución</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <div className="w-4 h-4 rounded bg-red-500"></div>
+                    <span>&gt; 1.5 Alto riesgo</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Resumen rápido */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-red-50 p-4 rounded-lg border border-red-200 text-center">
+                  <div className="text-3xl font-bold text-red-600">{acwrData.filter(d => d.status === 'danger').length}</div>
+                  <div className="text-sm text-gray-600">Alto riesgo</div>
+                </div>
+                <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200 text-center">
+                  <div className="text-3xl font-bold text-yellow-600">{acwrData.filter(d => d.status === 'warning').length}</div>
+                  <div className="text-sm text-gray-600">Precaución</div>
+                </div>
+                <div className="bg-green-50 p-4 rounded-lg border border-green-200 text-center">
+                  <div className="text-3xl font-bold text-green-600">{acwrData.filter(d => d.status === 'optimal').length}</div>
+                  <div className="text-sm text-gray-600">Óptimo</div>
+                </div>
+                <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 text-center">
+                  <div className="text-3xl font-bold text-blue-600">{acwrData.filter(d => d.status === 'low').length}</div>
+                  <div className="text-sm text-gray-600">Infraentrenado</div>
+                </div>
+              </div>
+
+              {/* Lista de jugadores con ACWR */}
+              {acwrData.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  <div className="text-6xl mb-4">📈</div>
+                  <p className="text-lg">No hay datos de ACWR todavía</p>
+                  <p className="text-sm mt-2">Los jugadores necesitan al menos 7 días de registros</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {acwrData.map((data, index) => (
+                    <div key={index} className={`border-2 rounded-lg p-4 ${getACWRColor(data.status)}`}>
+                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                        <div className="flex items-center space-x-4">
+                          <div className={`w-16 h-16 rounded-full flex items-center justify-center text-white text-2xl font-bold ${getACWRBadgeColor(data.status)}`}>
+                            {data.acwr !== null ? data.acwr : '?'}
+                          </div>
+                          <div>
+                            <div className="flex items-center space-x-2">
+                              <span className="text-xl font-bold text-blue-600">#{data.player.number || '-'}</span>
+                              <span className="text-lg font-semibold">{data.player.name}</span>
+                            </div>
+                            <div className="text-sm opacity-75">{data.player.position || 'Sin posición'}</div>
+                            <div className="text-sm font-medium mt-1">{data.message}</div>
+                          </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4 text-center">
+                          <div className="bg-white bg-opacity-50 rounded-lg p-3">
+                            <div className="text-xs text-gray-600 mb-1">Carga Aguda (7d)</div>
+                            <div className="text-xl font-bold">{data.acuteLoad} UA</div>
+                            {data.logsCount && (
+                              <div className="text-xs text-gray-500">{data.logsCount.acute} registros</div>
+                            )}
+                          </div>
+                          <div className="bg-white bg-opacity-50 rounded-lg p-3">
+                            <div className="text-xs text-gray-600 mb-1">Carga Crónica (28d)</div>
+                            <div className="text-xl font-bold">{data.chronicLoad} UA</div>
+                            {data.logsCount && (
+                              <div className="text-xs text-gray-500">{data.logsCount.chronic} registros</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* JUGADORES */}
           {activeTab === 'players' && (
             <div className="space-y-6">
               <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
@@ -836,59 +1103,74 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nº</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nombre</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Posición</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ACWR</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Acciones</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200">
-                        {players.map((player) => (
-                          <tr key={player.id} className="hover:bg-gray-50">
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <span className="text-lg font-bold text-blue-600">#{player.number || '-'}</span>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap font-medium">{player.name}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-gray-600">{player.position || '-'}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-gray-600">{player.email}</td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <button
-                                onClick={() => deletePlayer(player.id, player.name)}
-                                className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm font-medium transition-colors"
-                              >
-                                🗑️ Eliminar
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
+                        {players.map((player) => {
+                          const playerACWR = acwrData.find(d => d.player.id === player.id);
+                          return (
+                            <tr key={player.id} className="hover:bg-gray-50">
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className="text-lg font-bold text-blue-600">#{player.number || '-'}</span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap font-medium">{player.name}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-gray-600">{player.position || '-'}</td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                {playerACWR && playerACWR.acwr !== null ? (
+                                  <span className={`px-3 py-1 rounded-full text-sm font-bold text-white ${getACWRBadgeColor(playerACWR.status)}`}>
+                                    {playerACWR.acwr}
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-400 text-sm">Sin datos</span>
+                                )}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <button
+                                  onClick={() => deletePlayer(player.id, player.name)}
+                                  className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm font-medium transition-colors"
+                                >
+                                  🗑️ Eliminar
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
 
                   {/* VISTA MÓVIL - Tarjetas */}
                   <div className="md:hidden space-y-4">
-                    {players.map((player) => (
-                      <div key={player.id} className="bg-white rounded-lg shadow-md p-4 border border-gray-200">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center space-x-3">
-                            <span className="text-2xl font-bold text-blue-600">#{player.number || '-'}</span>
-                            <div>
-                              <div className="font-semibold text-lg">{player.name}</div>
-                              <div className="text-sm text-gray-500">{player.position || 'Sin posición'}</div>
+                    {players.map((player) => {
+                      const playerACWR = acwrData.find(d => d.player.id === player.id);
+                      return (
+                        <div key={player.id} className="bg-white rounded-lg shadow-md p-4 border border-gray-200">
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center space-x-3">
+                              <span className="text-2xl font-bold text-blue-600">#{player.number || '-'}</span>
+                              <div>
+                                <div className="font-semibold text-lg">{player.name}</div>
+                                <div className="text-sm text-gray-500">{player.position || 'Sin posición'}</div>
+                              </div>
                             </div>
+                            {playerACWR && playerACWR.acwr !== null && (
+                              <span className={`px-3 py-1 rounded-full text-sm font-bold text-white ${getACWRBadgeColor(playerACWR.status)}`}>
+                                {playerACWR.acwr}
+                              </span>
+                            )}
                           </div>
-                        </div>
 
-                        <div className="mb-3 text-sm text-gray-600">
-                          📧 {player.email}
+                          <button
+                            onClick={() => deletePlayer(player.id, player.name)}
+                            className="w-full px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 font-medium transition-colors"
+                          >
+                            🗑️ Eliminar Jugador
+                          </button>
                         </div>
-
-                        <button
-                          onClick={() => deletePlayer(player.id, player.name)}
-                          className="w-full px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 font-medium transition-colors"
-                        >
-                          🗑️ Eliminar Jugador
-                        </button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </>
               )}
@@ -944,6 +1226,22 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
                             <div className="text-sm text-gray-500">{log.players?.position}</div>
                           </div>
                         </div>
+                      </div>
+
+                      {/* Info de sesión */}
+                      <div className="mb-3 flex flex-wrap gap-2">
+                        <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
+                          {getSessionTypeLabel(log.session_type)}
+                        </span>
+                        <span className="px-3 py-1 bg-gray-100 text-gray-800 rounded-full text-sm">
+                          ⏱️ {log.session_duration || 60} min
+                        </span>
+                        <span className="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-sm font-medium">
+                          RPE: {log.rpe || 5}/10
+                        </span>
+                        <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-bold">
+                          Carga: {(log.rpe || 5) * (log.session_duration || 60)} UA
+                        </span>
                       </div>
 
                       <div className="text-sm text-gray-600 mb-3">
@@ -1036,7 +1334,9 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
   );
 };
 
-// PANEL DEL JUGADOR
+// ============================================
+// PANEL DEL JUGADOR (con campos ACWR)
+// ============================================
 const PlayerPanel = ({ currentUser, setView }) => {
   const [formData, setFormData] = useState({
     sleep_quality: 5,
@@ -1045,15 +1345,27 @@ const PlayerPanel = ({ currentUser, setView }) => {
     energy_level: 5,
     mood: 5,
     muscle_group: '',
-    notes: ''
+    notes: '',
+    // Nuevos campos para ACWR
+    session_type: 'training',
+    session_duration: 90,
+    rpe: 5
   });
   const [history, setHistory] = useState([]);
   const [showSuccess, setShowSuccess] = useState(false);
   const [successTime, setSuccessTime] = useState('');
+  const [myACWR, setMyACWR] = useState(null);
 
   useEffect(() => {
     loadHistory();
   }, []);
+
+  useEffect(() => {
+    if (history.length > 0) {
+      const acwrResult = calculateACWR(currentUser.playerId, history);
+      setMyACWR(acwrResult);
+    }
+  }, [history]);
 
   const loadHistory = async () => {
     const { data } = await supabase
@@ -1061,7 +1373,7 @@ const PlayerPanel = ({ currentUser, setView }) => {
       .select('*')
       .eq('player_id', currentUser.playerId)
       .order('created_at', { ascending: false })
-      .limit(10);
+      .limit(30);
     setHistory(data || []);
   };
 
@@ -1094,12 +1406,9 @@ const PlayerPanel = ({ currentUser, setView }) => {
 
       setTimeout(() => setShowSuccess(false), 3000);
 
+      // Resetear solo algunos campos
       setFormData({
-        sleep_quality: 5,
-        muscle_soreness: 5,
-        stress_level: 5,
-        energy_level: 5,
-        mood: 5,
+        ...formData,
         muscle_group: '',
         notes: ''
       });
@@ -1137,6 +1446,8 @@ const PlayerPanel = ({ currentUser, setView }) => {
     return 'text-red-600';
   };
 
+  const calculatedLoad = formData.rpe * formData.session_duration;
+
   return (
     <div className="min-h-screen p-4 md:p-8">
       <div className="max-w-4xl mx-auto">
@@ -1161,6 +1472,25 @@ const PlayerPanel = ({ currentUser, setView }) => {
           </div>
         </div>
 
+        {/* Mi ACWR */}
+        {myACWR && myACWR.acwr !== null && (
+          <div className={`mb-6 border-2 rounded-lg p-4 ${getACWRColor(myACWR.status)}`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-semibold text-lg">📈 Mi ACWR actual</h3>
+                <p className="text-sm opacity-75">{myACWR.message}</p>
+              </div>
+              <div className={`w-16 h-16 rounded-full flex items-center justify-center text-white text-2xl font-bold ${getACWRBadgeColor(myACWR.status)}`}>
+                {myACWR.acwr}
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-4 text-sm">
+              <div>Carga Aguda (7d): <span className="font-bold">{myACWR.acuteLoad} UA</span></div>
+              <div>Carga Crónica (28d): <span className="font-bold">{myACWR.chronicLoad} UA</span></div>
+            </div>
+          </div>
+        )}
+
         {/* Mensaje de éxito */}
         {showSuccess && (
           <div className="mb-6 bg-green-500 text-white p-4 rounded-lg shadow-lg animate-pulse">
@@ -1176,119 +1506,193 @@ const PlayerPanel = ({ currentUser, setView }) => {
           <h2 className="text-xl font-semibold mb-6">📝 Registro Diario de Bienestar</h2>
           
           <div className="space-y-6">
-            {/* Sueño */}
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                😴 Calidad del Sueño: <span className={`text-2xl font-bold ${getValueColor(formData.sleep_quality)}`}>{formData.sleep_quality}</span>
-              </label>
-              <input
-                type="range"
-                min="1"
-                max="10"
-                value={formData.sleep_quality}
-                onChange={(e) => setFormData({...formData, sleep_quality: parseInt(e.target.value)})}
-                className="w-full"
-              />
-              <div className="flex justify-between text-xs text-gray-500 mt-1">
-                <span>Muy mal</span>
-                <span>Excelente</span>
-              </div>
-            </div>
-
-            {/* Dolor Muscular */}
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                💪 Dolor Muscular: <span className={`text-2xl font-bold ${getValueColor(11 - formData.muscle_soreness)}`}>{formData.muscle_soreness}</span>
-              </label>
-              <input
-                type="range"
-                min="1"
-                max="10"
-                value={formData.muscle_soreness}
-                onChange={(e) => setFormData({...formData, muscle_soreness: parseInt(e.target.value)})}
-                className="w-full"
-              />
-              <div className="flex justify-between text-xs text-gray-500 mt-1">
-                <span>Sin dolor</span>
-                <span>Dolor severo</span>
-              </div>
-            </div>
-
-            {/* Selector de Grupo Muscular */}
-            {formData.muscle_soreness > 3 && (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                <label className="block text-sm font-medium mb-2">¿Dónde sientes el dolor?</label>
+            {/* SECCIÓN: DATOS DE SESIÓN (Nuevo) */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h3 className="font-semibold text-blue-800 mb-4">🏃 Datos de la Sesión</h3>
+              
+              {/* Tipo de sesión */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-2">Tipo de sesión:</label>
                 <select
-                  value={formData.muscle_group}
-                  onChange={(e) => setFormData({...formData, muscle_group: e.target.value})}
+                  value={formData.session_type}
+                  onChange={(e) => setFormData({...formData, session_type: e.target.value})}
                   className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="">Selecciona una zona</option>
-                  <option value="🦵 Piernas">🦵 Piernas</option>
-                  <option value="💪 Brazos">💪 Brazos</option>
-                  <option value="🔙 Espalda">🔙 Espalda</option>
-                  <option value="🤸 Hombros">🤸 Hombros</option>
-                  <option value="🗣️ Cuello">🗣️ Cuello</option>
-                  <option value="⚡ Core/Abdomen">⚡ Core/Abdomen</option>
-                  <option value="🌐 General">🌐 General</option>
+                  <option value="training">🏃 Entrenamiento</option>
+                  <option value="match">⚽ Partido</option>
+                  <option value="recovery">🧘 Recuperación activa</option>
+                  <option value="gym">💪 Gimnasio</option>
+                  <option value="rest">😴 Descanso total</option>
                 </select>
               </div>
-            )}
 
-            {/* Estrés */}
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                😰 Nivel de Estrés: <span className={`text-2xl font-bold ${getValueColor(11 - formData.stress_level)}`}>{formData.stress_level}</span>
-              </label>
-              <input
-                type="range"
-                min="1"
-                max="10"
-                value={formData.stress_level}
-                onChange={(e) => setFormData({...formData, stress_level: parseInt(e.target.value)})}
-                className="w-full"
-              />
-              <div className="flex justify-between text-xs text-gray-500 mt-1">
-                <span>Muy relajado</span>
-                <span>Muy estresado</span>
+              {/* Duración */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-2">
+                  ⏱️ Duración: <span className="text-xl font-bold text-blue-600">{formData.session_duration} min</span>
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="180"
+                  step="5"
+                  value={formData.session_duration}
+                  onChange={(e) => setFormData({...formData, session_duration: parseInt(e.target.value)})}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                  <span>0 min</span>
+                  <span>90 min</span>
+                  <span>180 min</span>
+                </div>
+              </div>
+
+              {/* RPE */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-2">
+                  💪 RPE (Esfuerzo Percibido): <span className={`text-2xl font-bold ${getValueColor(11 - formData.rpe)}`}>{formData.rpe}</span>
+                </label>
+                <input
+                  type="range"
+                  min="1"
+                  max="10"
+                  value={formData.rpe}
+                  onChange={(e) => setFormData({...formData, rpe: parseInt(e.target.value)})}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                  <span>1 - Muy fácil</span>
+                  <span>5 - Moderado</span>
+                  <span>10 - Máximo</span>
+                </div>
+              </div>
+
+              {/* Carga calculada */}
+              <div className="bg-white rounded-lg p-4 text-center">
+                <div className="text-sm text-gray-600 mb-1">Carga de esta sesión</div>
+                <div className="text-4xl font-bold text-blue-600">{calculatedLoad} <span className="text-lg">UA</span></div>
+                <div className="text-xs text-gray-500 mt-1">RPE × Duración = {formData.rpe} × {formData.session_duration}</div>
               </div>
             </div>
 
-            {/* Energía */}
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                ⚡ Nivel de Energía: <span className={`text-2xl font-bold ${getValueColor(formData.energy_level)}`}>{formData.energy_level}</span>
-              </label>
-              <input
-                type="range"
-                min="1"
-                max="10"
-                value={formData.energy_level}
-                onChange={(e) => setFormData({...formData, energy_level: parseInt(e.target.value)})}
-                className="w-full"
-              />
-              <div className="flex justify-between text-xs text-gray-500 mt-1">
-                <span>Sin energía</span>
-                <span>Mucha energía</span>
-              </div>
-            </div>
+            {/* SECCIÓN: BIENESTAR */}
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <h3 className="font-semibold text-green-800 mb-4">💚 Estado de Bienestar</h3>
 
-            {/* Ánimo */}
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                😊 Estado de Ánimo: <span className={`text-2xl font-bold ${getValueColor(formData.mood)}`}>{formData.mood}</span>
-              </label>
-              <input
-                type="range"
-                min="1"
-                max="10"
-                value={formData.mood}
-                onChange={(e) => setFormData({...formData, mood: parseInt(e.target.value)})}
-                className="w-full"
-              />
-              <div className="flex justify-between text-xs text-gray-500 mt-1">
-                <span>Muy mal</span>
-                <span>Excelente</span>
+              {/* Sueño */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-2">
+                  😴 Calidad del Sueño: <span className={`text-2xl font-bold ${getValueColor(formData.sleep_quality)}`}>{formData.sleep_quality}</span>
+                </label>
+                <input
+                  type="range"
+                  min="1"
+                  max="10"
+                  value={formData.sleep_quality}
+                  onChange={(e) => setFormData({...formData, sleep_quality: parseInt(e.target.value)})}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                  <span>Muy mal</span>
+                  <span>Excelente</span>
+                </div>
+              </div>
+
+              {/* Dolor Muscular */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-2">
+                  💪 Dolor Muscular: <span className={`text-2xl font-bold ${getValueColor(11 - formData.muscle_soreness)}`}>{formData.muscle_soreness}</span>
+                </label>
+                <input
+                  type="range"
+                  min="1"
+                  max="10"
+                  value={formData.muscle_soreness}
+                  onChange={(e) => setFormData({...formData, muscle_soreness: parseInt(e.target.value)})}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                  <span>Sin dolor</span>
+                  <span>Dolor severo</span>
+                </div>
+              </div>
+
+              {/* Selector de Grupo Muscular */}
+              {formData.muscle_soreness > 3 && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                  <label className="block text-sm font-medium mb-2">¿Dónde sientes el dolor?</label>
+                  <select
+                    value={formData.muscle_group}
+                    onChange={(e) => setFormData({...formData, muscle_group: e.target.value})}
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Selecciona una zona</option>
+                    <option value="🦵 Piernas">🦵 Piernas</option>
+                    <option value="💪 Brazos">💪 Brazos</option>
+                    <option value="🔙 Espalda">🔙 Espalda</option>
+                    <option value="🤸 Hombros">🤸 Hombros</option>
+                    <option value="🗣️ Cuello">🗣️ Cuello</option>
+                    <option value="⚡ Core/Abdomen">⚡ Core/Abdomen</option>
+                    <option value="🌐 General">🌐 General</option>
+                  </select>
+                </div>
+              )}
+
+              {/* Estrés */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-2">
+                  😰 Nivel de Estrés: <span className={`text-2xl font-bold ${getValueColor(11 - formData.stress_level)}`}>{formData.stress_level}</span>
+                </label>
+                <input
+                  type="range"
+                  min="1"
+                  max="10"
+                  value={formData.stress_level}
+                  onChange={(e) => setFormData({...formData, stress_level: parseInt(e.target.value)})}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                  <span>Muy relajado</span>
+                  <span>Muy estresado</span>
+                </div>
+              </div>
+
+              {/* Energía */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-2">
+                  ⚡ Nivel de Energía: <span className={`text-2xl font-bold ${getValueColor(formData.energy_level)}`}>{formData.energy_level}</span>
+                </label>
+                <input
+                  type="range"
+                  min="1"
+                  max="10"
+                  value={formData.energy_level}
+                  onChange={(e) => setFormData({...formData, energy_level: parseInt(e.target.value)})}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                  <span>Sin energía</span>
+                  <span>Mucha energía</span>
+                </div>
+              </div>
+
+              {/* Ánimo */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-2">
+                  😊 Estado de Ánimo: <span className={`text-2xl font-bold ${getValueColor(formData.mood)}`}>{formData.mood}</span>
+                </label>
+                <input
+                  type="range"
+                  min="1"
+                  max="10"
+                  value={formData.mood}
+                  onChange={(e) => setFormData({...formData, mood: parseInt(e.target.value)})}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                  <span>Muy mal</span>
+                  <span>Excelente</span>
+                </div>
               </div>
             </div>
 
@@ -1306,9 +1710,9 @@ const PlayerPanel = ({ currentUser, setView }) => {
 
             <button
               onClick={submitWellness}
-              className="w-full bg-green-500 text-white py-3 rounded-lg hover:bg-green-600 transition-colors font-medium text-lg"
+              className="w-full bg-green-500 text-white py-4 rounded-lg hover:bg-green-600 transition-colors font-medium text-lg"
             >
-              ✅ Enviar Registro
+              ✅ Enviar Registro ({calculatedLoad} UA)
             </button>
           </div>
         </div>
@@ -1325,55 +1729,67 @@ const PlayerPanel = ({ currentUser, setView }) => {
             </div>
           ) : (
             <div className="space-y-4">
-              {history.map((log) => (
+              {history.slice(0, 10).map((log) => (
                 <div key={log.id} className="border rounded-lg p-4 hover:bg-gray-50">
+                  <div className="flex flex-wrap items-center gap-2 mb-3">
+                    <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
+                      {log.session_type === 'training' ? '🏃 Entreno' : 
+                       log.session_type === 'match' ? '⚽ Partido' :
+                       log.session_type === 'recovery' ? '🧘 Recup.' :
+                       log.session_type === 'gym' ? '💪 Gym' : '😴 Descanso'}
+                    </span>
+                    <span className="px-3 py-1 bg-gray-100 rounded-full text-sm">
+                      ⏱️ {log.session_duration || 60} min
+                    </span>
+                    <span className="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-sm">
+                      RPE: {log.rpe || 5}
+                    </span>
+                    <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-bold">
+                      {(log.rpe || 5) * (log.session_duration || 60)} UA
+                    </span>
+                  </div>
+
                   <div className="text-sm text-gray-600 mb-3">
                     <div className="font-medium">{formatDate(log.created_at)}</div>
                     <div className="font-mono">{formatTime(log.created_at)}</div>
                   </div>
 
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-3">
-                    <div className="text-center">
-                      <div className="text-xs text-gray-500 mb-1">😴</div>
-                      <div className={`text-2xl font-bold ${getValueColor(log.sleep_quality)}`}>
+                  <div className="grid grid-cols-5 gap-2 text-center">
+                    <div>
+                      <div className="text-xs text-gray-500">😴</div>
+                      <div className={`text-lg font-bold ${getValueColor(log.sleep_quality)}`}>
                         {log.sleep_quality}
                       </div>
                     </div>
-                    <div className="text-center">
-                      <div className="text-xs text-gray-500 mb-1">💪</div>
-                      <div className={`text-2xl font-bold ${getValueColor(11 - log.muscle_soreness)}`}>
+                    <div>
+                      <div className="text-xs text-gray-500">💪</div>
+                      <div className={`text-lg font-bold ${getValueColor(11 - log.muscle_soreness)}`}>
                         {log.muscle_soreness}
                       </div>
                     </div>
-                    <div className="text-center">
-                      <div className="text-xs text-gray-500 mb-1">😰</div>
-                      <div className={`text-2xl font-bold ${getValueColor(11 - log.stress_level)}`}>
+                    <div>
+                      <div className="text-xs text-gray-500">😰</div>
+                      <div className={`text-lg font-bold ${getValueColor(11 - log.stress_level)}`}>
                         {log.stress_level}
                       </div>
                     </div>
-                    <div className="text-center">
-                      <div className="text-xs text-gray-500 mb-1">⚡</div>
-                      <div className={`text-2xl font-bold ${getValueColor(log.energy_level)}`}>
+                    <div>
+                      <div className="text-xs text-gray-500">⚡</div>
+                      <div className={`text-lg font-bold ${getValueColor(log.energy_level)}`}>
                         {log.energy_level}
                       </div>
                     </div>
-                    <div className="text-center">
-                      <div className="text-xs text-gray-500 mb-1">😊</div>
-                      <div className={`text-2xl font-bold ${getValueColor(log.mood)}`}>
+                    <div>
+                      <div className="text-xs text-gray-500">😊</div>
+                      <div className={`text-lg font-bold ${getValueColor(log.mood)}`}>
                         {log.mood}
                       </div>
                     </div>
                   </div>
 
-                  {log.muscle_group && (
-                    <div className="bg-yellow-50 border border-yellow-200 rounded p-2 mb-2 text-sm">
-                      💪 {log.muscle_group}
-                    </div>
-                  )}
-
                   {log.notes && (
-                    <div className="bg-blue-50 border border-blue-200 rounded p-3 text-sm">
-                      <span className="font-medium">Notas:</span> "{log.notes}"
+                    <div className="mt-3 bg-blue-50 border border-blue-200 rounded p-2 text-sm">
+                      "{log.notes}"
                     </div>
                   )}
                 </div>
