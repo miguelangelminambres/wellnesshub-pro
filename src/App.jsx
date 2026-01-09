@@ -825,23 +825,38 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
         
         {/* MODAL DE NOVEDADES */}
         {showNewsModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden">
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4"
+            onClick={closeNewsModal}
+          >
+            {/* Botón X flotante - SIEMPRE VISIBLE */}
+            <button
+              onClick={closeNewsModal}
+              className="fixed top-4 right-4 z-[60] w-12 h-12 flex items-center justify-center bg-red-500 hover:bg-red-600 rounded-full text-white text-2xl font-bold shadow-lg transition-colors"
+              style={{ minWidth: '48px', minHeight: '48px' }}
+            >
+              ✕
+            </button>
+
+            <div 
+              className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden max-h-[85vh] overflow-y-auto relative"
+              onClick={(e) => e.stopPropagation()}
+            >
               {/* Header con gradiente */}
-              <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white">
-                <div className="text-4xl mb-2">🎉</div>
-                <h2 className="text-2xl font-bold">¡Novedades en WellnessHub Pro!</h2>
-                <p className="text-blue-100 mt-1">Nueva funcionalidad disponible</p>
+              <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-4 sm:p-6 text-white">
+                <div className="text-3xl sm:text-4xl mb-2">🎉</div>
+                <h2 className="text-xl sm:text-2xl font-bold pr-8">¡Novedades en WellnessHub Pro!</h2>
+                <p className="text-blue-100 mt-1 text-sm sm:text-base">Nueva funcionalidad disponible</p>
               </div>
 
-              <div className="p-6">
+              <div className="p-4 sm:p-6">
                 {/* Novedad ACWR */}
-                <div className="mb-6">
-                  <div className="flex items-start space-x-4">
-                    <div className="text-3xl">📈</div>
+                <div className="mb-4 sm:mb-6">
+                  <div className="flex items-start space-x-3 sm:space-x-4">
+                    <div className="text-2xl sm:text-3xl">📈</div>
                     <div>
-                      <h3 className="font-bold text-lg text-gray-800">Control de Carga (ACWR)</h3>
-                      <p className="text-gray-600 text-sm mt-1">
+                      <h3 className="font-bold text-base sm:text-lg text-gray-800">Control de Carga (ACWR)</h3>
+                      <p className="text-gray-600 text-xs sm:text-sm mt-1">
                         Nueva pestaña <strong>"ACWR"</strong> que calcula automáticamente el riesgo de lesión 
                         de cada jugador basándose en su carga de entrenamiento. ¡Previene lesiones antes de que ocurran!
                       </p>
@@ -850,16 +865,16 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
                 </div>
 
                 {/* Aviso importante */}
-                <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4 mb-6">
-                  <div className="flex items-start space-x-3">
-                    <div className="text-2xl">⚠️</div>
+                <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-3 sm:p-4 mb-4 sm:mb-6">
+                  <div className="flex items-start space-x-2 sm:space-x-3">
+                    <div className="text-xl sm:text-2xl">⚠️</div>
                     <div>
-                      <h4 className="font-bold text-yellow-800">Importante: Avisa a tus jugadores</h4>
-                      <p className="text-yellow-700 text-sm mt-1">
+                      <h4 className="font-bold text-yellow-800 text-sm sm:text-base">Importante: Avisa a tus jugadores</h4>
+                      <p className="text-yellow-700 text-xs sm:text-sm mt-1">
                         Para que el ACWR funcione correctamente, los jugadores deben introducir la 
                         <strong> duración real de cada sesión</strong> (en minutos). 
                       </p>
-                      <p className="text-yellow-700 text-sm mt-2">
+                      <p className="text-yellow-700 text-xs sm:text-sm mt-2">
                         👉 <strong>Comunícales la duración</strong> de cada entrenamiento o partido para que la registren correctamente.
                       </p>
                     </div>
@@ -867,9 +882,9 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
                 </div>
 
                 {/* Cómo funciona */}
-                <div className="bg-gray-50 rounded-lg p-4 mb-6">
-                  <h4 className="font-semibold text-gray-800 mb-2">¿Cómo funciona?</h4>
-                  <ul className="text-sm text-gray-600 space-y-1">
+                <div className="bg-gray-50 rounded-lg p-3 sm:p-4 mb-4 sm:mb-6">
+                  <h4 className="font-semibold text-gray-800 mb-2 text-sm sm:text-base">¿Cómo funciona?</h4>
+                  <ul className="text-xs sm:text-sm text-gray-600 space-y-1">
                     <li>✅ El jugador registra: <strong>tipo de sesión + duración + esfuerzo percibido</strong></li>
                     <li>✅ El sistema calcula automáticamente la carga y el ACWR</li>
                     <li>✅ Tú ves qué jugadores están en riesgo de lesión</li>
@@ -877,18 +892,18 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
                 </div>
 
                 {/* Botones */}
-                <div className="flex flex-col sm:flex-row gap-3">
+                <div className="flex flex-col gap-2 sm:gap-3">
                   <button
                     onClick={() => { closeNewsModal(); setActiveTab('acwr'); }}
-                    className="flex-1 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium"
+                    className="w-full py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium text-sm sm:text-base"
                   >
                     📈 Ver panel ACWR
                   </button>
                   <button
                     onClick={closeNewsModal}
-                    className="flex-1 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+                    className="w-full py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium text-sm sm:text-base"
                   >
-                    Entendido
+                    ✓ Entendido
                   </button>
                 </div>
               </div>
@@ -1110,14 +1125,20 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
 
               {/* MODAL DE AYUDA ACWR */}
               {showACWRHelp && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                  <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                <div 
+                  className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+                  onClick={() => setShowACWRHelp(false)}
+                >
+                  <div 
+                    className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <div className="p-6">
                       <div className="flex justify-between items-center mb-6">
                         <h2 className="text-2xl font-bold text-gray-800">📈 Guía ACWR</h2>
                         <button
                           onClick={() => setShowACWRHelp(false)}
-                          className="text-gray-500 hover:text-gray-700 text-2xl"
+                          className="w-10 h-10 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-full text-gray-600 text-xl font-bold transition-colors"
                         >
                           ✕
                         </button>
