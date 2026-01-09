@@ -744,6 +744,77 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
     return types[type] || type;
   };
 
+  // ============================================
+  // FUNCIÓN EXPORTAR A EXCEL
+  // ============================================
+  const exportToExcel = (dataType) => {
+    let csvContent = '';
+    let fileName = '';
+    
+    if (dataType === 'wellness') {
+      // Exportar datos de bienestar
+      const logsToExport = selectedPlayer === 'all' ? wellnessLogs : filteredLogs;
+      
+      if (logsToExport.length === 0) {
+        alert('No hay datos para exportar');
+        return;
+      }
+      
+      // Cabeceras
+      csvContent = 'Fecha,Hora,Jugador,Dorsal,Posición,Tipo Sesión,Duración (min),RPE,Carga (UA),Sueño,Dolor,Estrés,Energía,Ánimo,Zona Dolor,Notas\n';
+      
+      // Datos
+      logsToExport.forEach(log => {
+        const fecha = new Date(log.created_at).toLocaleDateString('es-ES');
+        const hora = new Date(log.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+        const jugador = log.players?.name || 'Desconocido';
+        const dorsal = log.players?.number || '-';
+        const posicion = log.players?.position || '-';
+        const tipoSesion = log.session_type || 'training';
+        const duracion = log.session_duration || 60;
+        const rpe = log.rpe || 5;
+        const carga = rpe * duracion;
+        const notas = (log.notes || '').replace(/"/g, '""').replace(/,/g, ';');
+        const zonaDolor = (log.muscle_group || '').replace(/,/g, ';');
+        
+        csvContent += `${fecha},${hora},"${jugador}",${dorsal},"${posicion}",${tipoSesion},${duracion},${rpe},${carga},${log.sleep_quality},${log.muscle_soreness},${log.stress_level},${log.energy_level},${log.mood},"${zonaDolor}","${notas}"\n`;
+      });
+      
+      fileName = `bienestar_${currentUser.name}_${new Date().toISOString().split('T')[0]}.csv`;
+      
+    } else if (dataType === 'acwr') {
+      // Exportar datos de ACWR
+      if (acwrData.length === 0) {
+        alert('No hay datos de ACWR para exportar');
+        return;
+      }
+      
+      // Cabeceras
+      csvContent = 'Jugador,Dorsal,Posición,ACWR,Estado,Carga Aguda (7d),Carga Crónica (28d),Registros Agudos,Registros Crónicos\n';
+      
+      // Datos
+      acwrData.forEach(data => {
+        const estado = data.status === 'danger' ? 'ALTO RIESGO' :
+                       data.status === 'warning' ? 'PRECAUCIÓN' :
+                       data.status === 'optimal' ? 'ÓPTIMO' :
+                       data.status === 'low' ? 'INFRAENTRENADO' : 'SIN DATOS';
+        
+        csvContent += `"${data.player.name}",${data.player.number || '-'},"${data.player.position || '-'}",${data.acwr || 'N/A'},${estado},${data.acuteLoad},${data.chronicLoad},${data.logsCount?.acute || 0},${data.logsCount?.chronic || 0}\n`;
+      });
+      
+      fileName = `acwr_${currentUser.name}_${new Date().toISOString().split('T')[0]}.csv`;
+    }
+    
+    // Crear y descargar archivo
+    const BOM = '\uFEFF'; // Para que Excel reconozca los acentos
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = fileName;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+
   // Contar alertas críticas de ACWR
   const criticalACWRCount = acwrData.filter(d => d.status === 'danger').length;
   const warningACWRCount = acwrData.filter(d => d.status === 'warning').length;
@@ -1021,12 +1092,20 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
                     ❓ ¿Qué es ACWR?
                   </button>
                 </div>
-                <button
-                  onClick={() => { loadWellnessLogs(); }}
-                  className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-                >
-                  🔄 Actualizar
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => exportToExcel('acwr')}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                  >
+                    📥 Exportar Excel
+                  </button>
+                  <button
+                    onClick={() => { loadWellnessLogs(); }}
+                    className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                  >
+                    🔄 Actualizar
+                  </button>
+                </div>
               </div>
 
               {/* MODAL DE AYUDA ACWR */}
@@ -1401,12 +1480,20 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
             <div className="space-y-6">
               <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
                 <h3 className="text-xl font-semibold">💚 Registros de Bienestar ({filteredLogs.length})</h3>
-                <button
-                  onClick={loadWellnessLogs}
-                  className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-                >
-                  🔄 Actualizar
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => exportToExcel('wellness')}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                  >
+                    📥 Exportar Excel
+                  </button>
+                  <button
+                    onClick={loadWellnessLogs}
+                    className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                  >
+                    🔄 Actualizar
+                  </button>
+                </div>
               </div>
 
               {players.length > 0 && (
