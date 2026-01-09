@@ -449,6 +449,7 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
   const [alerts, setAlerts] = useState([]);
   const [acwrData, setAcwrData] = useState([]);
   const [showACWRHelp, setShowACWRHelp] = useState(false);
+  const [showNewsModal, setShowNewsModal] = useState(false);
   const [newPlayer, setNewPlayer] = useState({
     name: '',
     email: '',
@@ -461,6 +462,12 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
     if (currentUser?.id) {
       loadPlayers();
       loadWellnessLogs();
+      
+      // Mostrar modal de novedades si no lo ha visto
+      const hasSeenNews = localStorage.getItem('wellnesshub_news_v2_seen');
+      if (!hasSeenNews) {
+        setShowNewsModal(true);
+      }
     }
   }, [currentUser]);
 
@@ -683,6 +690,11 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
     setView('login');
   };
 
+  const closeNewsModal = () => {
+    localStorage.setItem('wellnesshub_news_v2_seen', 'true');
+    setShowNewsModal(false);
+  };
+
   const getValueColor = (value) => {
     if (value >= 8) return 'text-green-600 font-bold';
     if (value >= 5) return 'text-yellow-600 font-bold';
@@ -739,6 +751,80 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
   return (
     <div className="min-h-screen p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
+        
+        {/* MODAL DE NOVEDADES */}
+        {showNewsModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden">
+              {/* Header con gradiente */}
+              <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white">
+                <div className="text-4xl mb-2">🎉</div>
+                <h2 className="text-2xl font-bold">¡Novedades en WellnessHub Pro!</h2>
+                <p className="text-blue-100 mt-1">Nueva funcionalidad disponible</p>
+              </div>
+
+              <div className="p-6">
+                {/* Novedad ACWR */}
+                <div className="mb-6">
+                  <div className="flex items-start space-x-4">
+                    <div className="text-3xl">📈</div>
+                    <div>
+                      <h3 className="font-bold text-lg text-gray-800">Control de Carga (ACWR)</h3>
+                      <p className="text-gray-600 text-sm mt-1">
+                        Nueva pestaña <strong>"ACWR"</strong> que calcula automáticamente el riesgo de lesión 
+                        de cada jugador basándose en su carga de entrenamiento. ¡Previene lesiones antes de que ocurran!
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Aviso importante */}
+                <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4 mb-6">
+                  <div className="flex items-start space-x-3">
+                    <div className="text-2xl">⚠️</div>
+                    <div>
+                      <h4 className="font-bold text-yellow-800">Importante: Avisa a tus jugadores</h4>
+                      <p className="text-yellow-700 text-sm mt-1">
+                        Para que el ACWR funcione correctamente, los jugadores deben introducir la 
+                        <strong> duración real de cada sesión</strong> (en minutos). 
+                      </p>
+                      <p className="text-yellow-700 text-sm mt-2">
+                        👉 <strong>Comunícales la duración</strong> de cada entrenamiento o partido para que la registren correctamente.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Cómo funciona */}
+                <div className="bg-gray-50 rounded-lg p-4 mb-6">
+                  <h4 className="font-semibold text-gray-800 mb-2">¿Cómo funciona?</h4>
+                  <ul className="text-sm text-gray-600 space-y-1">
+                    <li>✅ El jugador registra: <strong>tipo de sesión + duración + esfuerzo percibido</strong></li>
+                    <li>✅ El sistema calcula automáticamente la carga y el ACWR</li>
+                    <li>✅ Tú ves qué jugadores están en riesgo de lesión</li>
+                  </ul>
+                </div>
+
+                {/* Botones */}
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <button
+                    onClick={() => { closeNewsModal(); setActiveTab('acwr'); }}
+                    className="flex-1 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium"
+                  >
+                    📈 Ver panel ACWR
+                  </button>
+                  <button
+                    onClick={closeNewsModal}
+                    className="flex-1 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+                  >
+                    Entendido
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Header */}
         <div className="bg-white rounded-lg shadow-lg p-4 md:p-6 mb-6">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
