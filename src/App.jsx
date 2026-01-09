@@ -448,6 +448,7 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
   const [selectedPlayer, setSelectedPlayer] = useState('all');
   const [alerts, setAlerts] = useState([]);
   const [acwrData, setAcwrData] = useState([]);
+  const [showACWRHelp, setShowACWRHelp] = useState(false);
   const [newPlayer, setNewPlayer] = useState({
     name: '',
     email: '',
@@ -925,7 +926,15 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
           {activeTab === 'acwr' && (
             <div className="space-y-6">
               <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
-                <h3 className="text-xl font-semibold">📈 Control de Carga (ACWR)</h3>
+                <div className="flex items-center gap-3">
+                  <h3 className="text-xl font-semibold">📈 Control de Carga (ACWR)</h3>
+                  <button
+                    onClick={() => setShowACWRHelp(true)}
+                    className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full hover:bg-blue-200 transition-colors text-sm font-medium"
+                  >
+                    ❓ ¿Qué es ACWR?
+                  </button>
+                </div>
                 <button
                   onClick={() => { loadWellnessLogs(); }}
                   className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
@@ -933,6 +942,130 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
                   🔄 Actualizar
                 </button>
               </div>
+
+              {/* MODAL DE AYUDA ACWR */}
+              {showACWRHelp && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                  <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                    <div className="p-6">
+                      <div className="flex justify-between items-center mb-6">
+                        <h2 className="text-2xl font-bold text-gray-800">📈 Guía ACWR</h2>
+                        <button
+                          onClick={() => setShowACWRHelp(false)}
+                          className="text-gray-500 hover:text-gray-700 text-2xl"
+                        >
+                          ✕
+                        </button>
+                      </div>
+
+                      {/* Qué es */}
+                      <div className="mb-6">
+                        <h3 className="text-lg font-semibold text-blue-600 mb-2">¿Qué es el ACWR?</h3>
+                        <p className="text-gray-600">
+                          El <strong>Acute:Chronic Workload Ratio</strong> (Ratio de Carga Aguda:Crónica) es una métrica 
+                          utilizada en el deporte profesional para <strong>predecir el riesgo de lesiones</strong> basándose 
+                          en la relación entre la carga de entrenamiento reciente y la carga histórica del jugador.
+                        </p>
+                      </div>
+
+                      {/* Fórmula */}
+                      <div className="mb-6 bg-gray-50 rounded-lg p-4">
+                        <h3 className="text-lg font-semibold text-blue-600 mb-2">📐 Fórmula</h3>
+                        <div className="text-center py-4">
+                          <div className="text-2xl font-mono font-bold text-gray-800">
+                            ACWR = Carga Aguda (7 días) ÷ Carga Crónica (28 días)
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4 mt-4 text-sm">
+                          <div className="bg-white p-3 rounded-lg">
+                            <div className="font-semibold text-gray-700">Carga Aguda</div>
+                            <div className="text-gray-600">Suma de la carga de los últimos 7 días</div>
+                          </div>
+                          <div className="bg-white p-3 rounded-lg">
+                            <div className="font-semibold text-gray-700">Carga Crónica</div>
+                            <div className="text-gray-600">Promedio semanal de los últimos 28 días</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Cálculo de carga */}
+                      <div className="mb-6 bg-blue-50 rounded-lg p-4">
+                        <h3 className="text-lg font-semibold text-blue-600 mb-2">⚡ Cálculo de Carga (UA)</h3>
+                        <div className="text-center py-2">
+                          <div className="text-xl font-mono font-bold text-blue-800">
+                            Carga (UA) = RPE × Duración (min)
+                          </div>
+                        </div>
+                        <p className="text-sm text-gray-600 mt-2">
+                          <strong>UA</strong> = Unidades Arbitrarias. Ejemplo: Entrenamiento de 90 min con RPE 7 = 630 UA
+                        </p>
+                      </div>
+
+                      {/* Zonas de riesgo */}
+                      <div className="mb-6">
+                        <h3 className="text-lg font-semibold text-blue-600 mb-3">🚦 Zonas de Riesgo</h3>
+                        <div className="space-y-3">
+                          <div className="flex items-center p-3 bg-blue-100 rounded-lg border-2 border-blue-300">
+                            <div className="w-16 h-12 bg-blue-500 rounded-lg flex items-center justify-center text-white font-bold mr-4">
+                              &lt; 0.8
+                            </div>
+                            <div>
+                              <div className="font-semibold text-blue-800">Infraentrenado</div>
+                              <div className="text-sm text-blue-600">El jugador está perdiendo forma física. Necesita más carga.</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center p-3 bg-green-100 rounded-lg border-2 border-green-300">
+                            <div className="w-16 h-12 bg-green-500 rounded-lg flex items-center justify-center text-white font-bold mr-4">
+                              0.8-1.3
+                            </div>
+                            <div>
+                              <div className="font-semibold text-green-800">Zona Óptima ✓</div>
+                              <div className="text-sm text-green-600">"Sweet spot" - Menor riesgo de lesión. Carga bien gestionada.</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center p-3 bg-yellow-100 rounded-lg border-2 border-yellow-300">
+                            <div className="w-16 h-12 bg-yellow-500 rounded-lg flex items-center justify-center text-white font-bold mr-4">
+                              1.3-1.5
+                            </div>
+                            <div>
+                              <div className="font-semibold text-yellow-800">Precaución ⚠️</div>
+                              <div className="text-sm text-yellow-700">Riesgo moderado. Vigilar al jugador y considerar reducir intensidad.</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center p-3 bg-red-100 rounded-lg border-2 border-red-300">
+                            <div className="w-16 h-12 bg-red-500 rounded-lg flex items-center justify-center text-white font-bold mr-4">
+                              &gt; 1.5
+                            </div>
+                            <div>
+                              <div className="font-semibold text-red-800">Alto Riesgo 🔴</div>
+                              <div className="text-sm text-red-600">Pico de carga peligroso. Alto riesgo de lesión. Reducir carga inmediatamente.</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Recomendaciones */}
+                      <div className="mb-6 bg-gray-50 rounded-lg p-4">
+                        <h3 className="text-lg font-semibold text-blue-600 mb-2">💡 Recomendaciones</h3>
+                        <ul className="space-y-2 text-sm text-gray-600">
+                          <li>• No aumentar la carga semanal más de un <strong>10-15%</strong> respecto a la semana anterior</li>
+                          <li>• Después de periodos de descanso, reintroducir carga <strong>progresivamente</strong></li>
+                          <li>• Combinar ACWR con datos de <strong>wellness</strong> (sueño, fatiga, estrés) para decisiones más precisas</li>
+                          <li>• Necesitas mínimo <strong>7 días de datos</strong> para un ACWR fiable</li>
+                        </ul>
+                      </div>
+
+                      {/* Botón cerrar */}
+                      <button
+                        onClick={() => setShowACWRHelp(false)}
+                        className="w-full py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium"
+                      >
+                        Entendido
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Leyenda */}
               <div className="bg-gray-50 p-4 rounded-lg border">
@@ -1354,18 +1487,10 @@ const PlayerPanel = ({ currentUser, setView }) => {
   const [history, setHistory] = useState([]);
   const [showSuccess, setShowSuccess] = useState(false);
   const [successTime, setSuccessTime] = useState('');
-  const [myACWR, setMyACWR] = useState(null);
 
   useEffect(() => {
     loadHistory();
   }, []);
-
-  useEffect(() => {
-    if (history.length > 0) {
-      const acwrResult = calculateACWR(currentUser.playerId, history);
-      setMyACWR(acwrResult);
-    }
-  }, [history]);
 
   const loadHistory = async () => {
     const { data } = await supabase
@@ -1446,8 +1571,6 @@ const PlayerPanel = ({ currentUser, setView }) => {
     return 'text-red-600';
   };
 
-  const calculatedLoad = formData.rpe * formData.session_duration;
-
   return (
     <div className="min-h-screen p-4 md:p-8">
       <div className="max-w-4xl mx-auto">
@@ -1471,25 +1594,6 @@ const PlayerPanel = ({ currentUser, setView }) => {
             </button>
           </div>
         </div>
-
-        {/* Mi ACWR */}
-        {myACWR && myACWR.acwr !== null && (
-          <div className={`mb-6 border-2 rounded-lg p-4 ${getACWRColor(myACWR.status)}`}>
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-semibold text-lg">📈 Mi ACWR actual</h3>
-                <p className="text-sm opacity-75">{myACWR.message}</p>
-              </div>
-              <div className={`w-16 h-16 rounded-full flex items-center justify-center text-white text-2xl font-bold ${getACWRBadgeColor(myACWR.status)}`}>
-                {myACWR.acwr}
-              </div>
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-4 text-sm">
-              <div>Carga Aguda (7d): <span className="font-bold">{myACWR.acuteLoad} UA</span></div>
-              <div>Carga Crónica (28d): <span className="font-bold">{myACWR.chronicLoad} UA</span></div>
-            </div>
-          </div>
-        )}
 
         {/* Mensaje de éxito */}
         {showSuccess && (
@@ -1550,7 +1654,7 @@ const PlayerPanel = ({ currentUser, setView }) => {
               {/* RPE */}
               <div className="mb-4">
                 <label className="block text-sm font-medium mb-2">
-                  💪 RPE (Esfuerzo Percibido): <span className={`text-2xl font-bold ${getValueColor(11 - formData.rpe)}`}>{formData.rpe}</span>
+                  💪 Esfuerzo Percibido: <span className={`text-2xl font-bold ${getValueColor(11 - formData.rpe)}`}>{formData.rpe}</span>
                 </label>
                 <input
                   type="range"
@@ -1565,13 +1669,6 @@ const PlayerPanel = ({ currentUser, setView }) => {
                   <span>5 - Moderado</span>
                   <span>10 - Máximo</span>
                 </div>
-              </div>
-
-              {/* Carga calculada */}
-              <div className="bg-white rounded-lg p-4 text-center">
-                <div className="text-sm text-gray-600 mb-1">Carga de esta sesión</div>
-                <div className="text-4xl font-bold text-blue-600">{calculatedLoad} <span className="text-lg">UA</span></div>
-                <div className="text-xs text-gray-500 mt-1">RPE × Duración = {formData.rpe} × {formData.session_duration}</div>
               </div>
             </div>
 
@@ -1712,7 +1809,7 @@ const PlayerPanel = ({ currentUser, setView }) => {
               onClick={submitWellness}
               className="w-full bg-green-500 text-white py-4 rounded-lg hover:bg-green-600 transition-colors font-medium text-lg"
             >
-              ✅ Enviar Registro ({calculatedLoad} UA)
+              ✅ Enviar Registro
             </button>
           </div>
         </div>
@@ -1740,12 +1837,6 @@ const PlayerPanel = ({ currentUser, setView }) => {
                     </span>
                     <span className="px-3 py-1 bg-gray-100 rounded-full text-sm">
                       ⏱️ {log.session_duration || 60} min
-                    </span>
-                    <span className="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-sm">
-                      RPE: {log.rpe || 5}
-                    </span>
-                    <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-bold">
-                      {(log.rpe || 5) * (log.session_duration || 60)} UA
                     </span>
                   </div>
 
