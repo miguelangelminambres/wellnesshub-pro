@@ -438,6 +438,154 @@ const getACWRBadgeColor = (status) => {
 };
 
 // ============================================
+// PESTAÑA DE CONFIGURACIÓN CON EDICIÓN
+// ============================================
+const SettingsTab = ({ currentUser, setCurrentUser }) => {
+  const [editing, setEditing] = useState(false);
+  const [editData, setEditData] = useState({
+    name: currentUser.name || '',
+    coach_name: currentUser.coach_name || ''
+  });
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState('');
+
+  const handleSave = async () => {
+    try {
+      if (!editData.name.trim()) {
+        alert('El nombre del equipo no puede estar vacío');
+        return;
+      }
+      if (!editData.coach_name.trim()) {
+        alert('El nombre del entrenador no puede estar vacío');
+        return;
+      }
+
+      setSaving(true);
+      setSaveMsg('');
+
+      const { error } = await supabase
+        .from('teams')
+        .update({
+          name: editData.name.trim(),
+          coach_name: editData.coach_name.trim()
+        })
+        .eq('id', currentUser.id);
+
+      if (error) throw error;
+
+      // Actualizar el usuario en la app para que se vea el cambio inmediatamente
+      setCurrentUser(prev => ({
+        ...prev,
+        name: editData.name.trim(),
+        coach_name: editData.coach_name.trim()
+      }));
+
+      setSaveMsg('✅ Cambios guardados correctamente');
+      setEditing(false);
+      setTimeout(() => setSaveMsg(''), 3000);
+    } catch (err) {
+      console.error('Error al guardar:', err);
+      alert('❌ Error al guardar los cambios. Inténtalo de nuevo.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setEditData({
+      name: currentUser.name || '',
+      coach_name: currentUser.coach_name || ''
+    });
+    setEditing(false);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-xl font-semibold">⚙️ Configuración</h3>
+        {!editing && (
+          <button
+            onClick={() => setEditing(true)}
+            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm"
+          >
+            ✏️ Editar
+          </button>
+        )}
+      </div>
+
+      {saveMsg && (
+        <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
+          {saveMsg}
+        </div>
+      )}
+
+      <div className="space-y-4">
+        <div className="border-b pb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Nombre del Equipo</label>
+          {editing ? (
+            <input
+              type="text"
+              value={editData.name}
+              onChange={(e) => setEditData({...editData, name: e.target.value})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="Nombre del equipo"
+            />
+          ) : (
+            <div className="text-lg">{currentUser.name}</div>
+          )}
+        </div>
+
+        <div className="border-b pb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Entrenador</label>
+          {editing ? (
+            <input
+              type="text"
+              value={editData.coach_name}
+              onChange={(e) => setEditData({...editData, coach_name: e.target.value})}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="Nombre del entrenador"
+            />
+          ) : (
+            <div className="text-lg">{currentUser.coach_name}</div>
+          )}
+        </div>
+
+        <div className="border-b pb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+          <div className="text-lg text-gray-600">{currentUser.email}</div>
+          {editing && (
+            <div className="text-xs text-gray-400 mt-1">El email no se puede modificar</div>
+          )}
+        </div>
+
+        <div className="border-b pb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Licencia</label>
+          <div className="text-lg font-mono text-gray-600">{currentUser.license}</div>
+        </div>
+      </div>
+
+      {editing && (
+        <div className="flex gap-3 pt-2">
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex-1 bg-green-500 text-white py-3 rounded-lg hover:bg-green-600 transition-colors font-medium disabled:opacity-50"
+          >
+            {saving ? '⏳ Guardando...' : '✅ Guardar Cambios'}
+          </button>
+          <button
+            onClick={handleCancel}
+            className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+          >
+            ❌ Cancelar
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================
 // DASHBOARD DEL ENTRENADOR
 // ============================================
 const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
@@ -1627,33 +1775,9 @@ const CoachDashboard = ({ currentUser, setView, setCurrentUser }) => {
             </div>
           )}
 
-          {/* CONFIGURACIÓN */}
+          {/* CONFIGURACIÓN - Ahora usa el componente SettingsTab con edición */}
           {activeTab === 'settings' && (
-            <div className="space-y-6">
-              <h3 className="text-xl font-semibold mb-4">⚙️ Configuración</h3>
-              
-              <div className="space-y-4">
-                <div className="border-b pb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Nombre del Equipo</label>
-                  <div className="text-lg">{currentUser.name}</div>
-                </div>
-                
-                <div className="border-b pb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Entrenador</label>
-                  <div className="text-lg">{currentUser.coach_name}</div>
-                </div>
-                
-                <div className="border-b pb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                  <div className="text-lg">{currentUser.email}</div>
-                </div>
-                
-                <div className="border-b pb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Licencia</label>
-                  <div className="text-lg font-mono">{currentUser.license}</div>
-                </div>
-              </div>
-            </div>
+            <SettingsTab currentUser={currentUser} setCurrentUser={setCurrentUser} />
           )}
         </div>
       </div>
